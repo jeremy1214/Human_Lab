@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import Twist
-from tello_msgs.srv import TelloAction  # publish tello takeoff & land
-import pygame
 import sys
+
+import pygame
+import rclpy
+from geometry_msgs.msg import Twist
+from rclpy.node import Node
+from std_srvs.srv import Trigger  # takeoff / land / emergency
+
 
 class ControlTelloEKF(Node):
     def __init__(self):
         super().__init__('control_tello_ekf')
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
-        self.client_ = self.create_client(TelloAction, '/tello_action')
+        self.takeoff_client_  = self.create_client(Trigger, '/tello/takeoff')
+        self.land_client_     = self.create_client(Trigger, '/tello/land')
+        self.emergency_client_= self.create_client(Trigger, '/tello/emergency')
         
         pygame.init()
         self.screen = pygame.display.set_mode((480, 420))
@@ -32,13 +36,20 @@ class ControlTelloEKF(Node):
         self.timer = self.create_timer(0.05, self.timer_callback)
 
     def send_tello_cmd(self, cmd_string):
-        if not self.client_.service_is_ready():
-            self.get_logger().warn(f"Tello Action Service can not publish cmd: {cmd_string}")
+        client_map = {
+            'takeoff':   self.takeoff_client_,
+            'land':      self.land_client_,
+            'emergency': self.emergency_client_,
+        }
+        client = client_map.get(cmd_string)
+        if client is None:
+            self.get_logger().warn(f"Unknown tello command: {cmd_string}")
             return
-        request = TelloAction.Request()
-        request.cmd = cmd_string
-        self.client_.call_async(request)
-        self.get_logger().info(f"Publish cmd: {cmd_string}")
+        if not client.service_is_ready():
+            self.get_logger().warn(f"Service not ready for cmd: {cmd_string}")
+            return
+        client.call_async(Trigger.Request())
+        self.get_logger().info(f"Sent tello cmd: {cmd_string}")
 
     def timer_callback(self):
         for event in pygame.event.get():

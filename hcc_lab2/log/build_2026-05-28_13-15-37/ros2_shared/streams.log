@@ -1,0 +1,53 @@
+[0.074s] Invoking command in '/home/user/hcc_lab2/build/ros2_shared': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared
+[0.144s] -- Found ament_cmake: 0.9.12 (/opt/ros/foxy/share/ament_cmake/cmake)
+[0.218s] -- Found PythonInterp: /usr/bin/python3 (found suitable version "3.8.10", minimum required is "3") 
+[0.218s] -- Using PYTHON_EXECUTABLE: /usr/bin/python3
+[0.648s] -- Found rclcpp: 2.4.3 (/opt/ros/foxy/share/rclcpp/cmake)
+[0.843s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.853s] -- Found rosidl_adapter: 1.3.1 (/opt/ros/foxy/share/rosidl_adapter/cmake)
+[1.337s] -- Found OpenSSL: /usr/lib/x86_64-linux-gnu/libcrypto.so (found version "1.1.1f")  
+[1.429s] -- Found FastRTPS: /opt/ros/foxy/include  
+[1.685s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[1.944s] -- Found rmw_implementation_cmake: 1.0.4 (/opt/ros/foxy/share/rmw_implementation_cmake/cmake)
+[1.955s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[1.963s] -- Looking for pthread.h
+[2.200s] -- Looking for pthread.h - found
+[2.200s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+[2.384s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Failed
+[2.384s] -- Looking for pthread_create in pthreads
+[2.539s] -- Looking for pthread_create in pthreads - not found
+[2.540s] -- Looking for pthread_create in pthread
+[2.711s] -- Looking for pthread_create in pthread - found
+[2.714s] -- Found Threads: TRUE  
+[3.216s] -- Configuring done
+[3.227s] -- Generating done
+[3.233s] -- Build files have been written to: /home/user/hcc_lab2/build/ros2_shared
+[3.248s] Invoked command in '/home/user/hcc_lab2/build/ros2_shared' returned '0': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared
+[3.249s] Invoking command in '/home/user/hcc_lab2/build/ros2_shared': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --build /home/user/hcc_lab2/build/ros2_shared -- -j4 -l4
+[3.353s] Invoked command in '/home/user/hcc_lab2/build/ros2_shared' returned '0': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --build /home/user/hcc_lab2/build/ros2_shared -- -j4 -l4
+[3.361s] Invoking command in '/home/user/hcc_lab2/build/ros2_shared': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --install /home/user/hcc_lab2/build/ros2_shared
+[3.376s] -- Install configuration: ""
+[3.376s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/include
+[3.378s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/include/ros2_shared
+[3.379s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/include/ros2_shared/context_macros.hpp
+[3.380s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/include/ros2_shared/string_printf.hpp
+[3.380s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/include/ros2_shared/param_macros.hpp
+[3.380s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ament_index/resource_index/package_run_dependencies/ros2_shared
+[3.380s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ament_index/resource_index/parent_prefix_path/ros2_shared
+[3.381s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/environment/ament_prefix_path.sh
+[3.382s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/environment/ament_prefix_path.dsv
+[3.383s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/environment/path.sh
+[3.386s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/environment/path.dsv
+[3.387s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/local_setup.bash
+[3.388s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/local_setup.sh
+[3.389s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/local_setup.zsh
+[3.390s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/local_setup.dsv
+[3.391s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/package.dsv
+[3.391s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ament_index/resource_index/packages/ros2_shared
+[3.392s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/cmake/ros2_shared_targetsExport.cmake
+[3.393s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/cmake/ament_cmake_export_targets-extras.cmake
+[3.393s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/cmake/ament_cmake_export_dependencies-extras.cmake
+[3.394s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/cmake/ros2_sharedConfig.cmake
+[3.395s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/cmake/ros2_sharedConfig-version.cmake
+[3.395s] -- Installing: /home/user/hcc_lab2/install/ros2_shared/share/ros2_shared/package.xml
+[3.402s] Invoked command in '/home/user/hcc_lab2/build/ros2_shared' returned '0': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --install /home/user/hcc_lab2/build/ros2_shared

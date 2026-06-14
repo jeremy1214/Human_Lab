@@ -1,0 +1,3 @@
+/home/user/hcc_lab2/build/tello_msgs/rosidl_adapter/tello_msgs:msg/FlightData.idl
+/home/user/hcc_lab2/build/tello_msgs/rosidl_adapter/tello_msgs:msg/TelloResponse.idl
+/home/user/hcc_lab2/build/tello_msgs/rosidl_adapter/tello_msgs:srv/TelloAction.idl

@@ -1,0 +1,21 @@
+[0.027s] Invoking command in '/home/user/hcc_lab2/build/ros2_shared': /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared
+[0.075s] CMake Error at CMakeLists.txt:19 (find_package):
+[0.075s]   By not providing "Findament_cmake.cmake" in CMAKE_MODULE_PATH this project
+[0.075s]   has asked CMake to find a package configuration file provided by
+[0.075s]   "ament_cmake", but CMake did not find one.
+[0.075s] 
+[0.075s]   Could not find a package configuration file provided by "ament_cmake" with
+[0.076s]   any of the following names:
+[0.076s] 
+[0.076s]     ament_cmakeConfig.cmake
+[0.076s]     ament_cmake-config.cmake
+[0.076s] 
+[0.076s]   Add the installation prefix of "ament_cmake" to CMAKE_PREFIX_PATH or set
+[0.076s]   "ament_cmake_DIR" to a directory containing one of the above files.  If
+[0.076s]   "ament_cmake" provides a separate development package or SDK, be sure it
+[0.076s]   has been installed.
+[0.076s] 
+[0.076s] 
+[0.076s] -- Configuring incomplete, errors occurred!
+[0.077s] See also "/home/user/hcc_lab2/build/ros2_shared/CMakeFiles/CMakeOutput.log".
+[0.082s] Invoked command in '/home/user/hcc_lab2/build/ros2_shared' returned '1': /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared

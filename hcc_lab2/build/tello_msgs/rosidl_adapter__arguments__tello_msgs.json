@@ -1,0 +1,8 @@
+{
+  "package_name": "tello_msgs",
+  "non_idl_tuples": [
+    "/home/user/hcc_lab2/src/tello_ros/tello_msgs:msg/FlightData.msg",
+    "/home/user/hcc_lab2/src/tello_ros/tello_msgs:msg/TelloResponse.msg",
+    "/home/user/hcc_lab2/src/tello_ros/tello_msgs:srv/TelloAction.srv"
+  ]
+}

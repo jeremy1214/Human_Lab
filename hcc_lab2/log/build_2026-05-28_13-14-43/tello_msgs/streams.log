@@ -1,0 +1,21 @@
+[0.050s] Invoking command in '/home/user/hcc_lab2/build/tello_msgs': /usr/bin/cmake /home/user/hcc_lab2/src/tello_ros/tello_msgs -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/tello_msgs
+[0.110s] CMake Error at CMakeLists.txt:20 (find_package):
+[0.111s]   By not providing "Findament_cmake.cmake" in CMAKE_MODULE_PATH this project
+[0.111s]   has asked CMake to find a package configuration file provided by
+[0.112s]   "ament_cmake", but CMake did not find one.
+[0.113s] 
+[0.114s]   Could not find a package configuration file provided by "ament_cmake" with
+[0.114s]   any of the following names:
+[0.114s] 
+[0.114s]     ament_cmakeConfig.cmake
+[0.114s]     ament_cmake-config.cmake
+[0.115s] 
+[0.115s]   Add the installation prefix of "ament_cmake" to CMAKE_PREFIX_PATH or set
+[0.115s]   "ament_cmake_DIR" to a directory containing one of the above files.  If
+[0.115s]   "ament_cmake" provides a separate development package or SDK, be sure it
+[0.115s]   has been installed.
+[0.115s] 
+[0.115s] 
+[0.121s] -- Configuring incomplete, errors occurred!
+[0.121s] See also "/home/user/hcc_lab2/build/tello_msgs/CMakeFiles/CMakeOutput.log".
+[0.415s] Invoked command in '/home/user/hcc_lab2/build/tello_msgs' returned '1': /usr/bin/cmake /home/user/hcc_lab2/src/tello_ros/tello_msgs -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/tello_msgs

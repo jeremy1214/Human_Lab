@@ -1,0 +1,2 @@
+Invoking command in '/home/user/hcc_lab2/build/ros2_shared': /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared
+Invoked command in '/home/user/hcc_lab2/build/ros2_shared' returned '1': /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared

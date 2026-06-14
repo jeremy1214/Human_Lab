@@ -1,0 +1,10 @@
+  File "/home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization/ekf_localization_node.py", line 36
+    self.Sigma = ???                                        # TODO
+                 ^
+SyntaxError: invalid syntax
+
+  File "/home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization/apriltag_detector_node.py", line 24
+    FX = ???
+         ^
+SyntaxError: invalid syntax
+

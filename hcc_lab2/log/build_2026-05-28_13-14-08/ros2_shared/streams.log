@@ -1,0 +1,35 @@
+[0.081s] Invoking command in '/home/user/hcc_lab2/build/ros2_shared': /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared
+[0.618s] -- The C compiler identification is GNU 9.4.0
+[1.165s] -- The CXX compiler identification is GNU 9.4.0
+[1.220s] -- Check for working C compiler: /usr/bin/cc
+[1.415s] -- Check for working C compiler: /usr/bin/cc -- works
+[1.416s] -- Detecting C compiler ABI info
+[1.582s] -- Detecting C compiler ABI info - done
+[1.612s] -- Detecting C compile features
+[1.613s] -- Detecting C compile features - done
+[1.618s] -- Check for working CXX compiler: /usr/bin/c++
+[1.795s] -- Check for working CXX compiler: /usr/bin/c++ -- works
+[1.798s] -- Detecting CXX compiler ABI info
+[2.000s] -- Detecting CXX compiler ABI info - done
+[2.021s] -- Detecting CXX compile features
+[2.022s] -- Detecting CXX compile features - done
+[2.065s] CMake Error at CMakeLists.txt:19 (find_package):
+[2.065s]   By not providing "Findament_cmake.cmake" in CMAKE_MODULE_PATH this project
+[2.066s]   has asked CMake to find a package configuration file provided by
+[2.066s]   "ament_cmake", but CMake did not find one.
+[2.066s] 
+[2.067s]   Could not find a package configuration file provided by "ament_cmake" with
+[2.067s]   any of the following names:
+[2.067s] 
+[2.067s]     ament_cmakeConfig.cmake
+[2.067s]     ament_cmake-config.cmake
+[2.067s] 
+[2.067s]   Add the installation prefix of "ament_cmake" to CMAKE_PREFIX_PATH or set
+[2.068s]   "ament_cmake_DIR" to a directory containing one of the above files.  If
+[2.068s]   "ament_cmake" provides a separate development package or SDK, be sure it
+[2.068s]   has been installed.
+[2.070s] 
+[2.070s] 
+[2.071s] -- Configuring incomplete, errors occurred!
+[2.071s] See also "/home/user/hcc_lab2/build/ros2_shared/CMakeFiles/CMakeOutput.log".
+[2.145s] Invoked command in '/home/user/hcc_lab2/build/ros2_shared' returned '1': /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared

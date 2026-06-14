@@ -1,0 +1,35 @@
+[0.066s] Invoking command in '/home/user/hcc_lab2/build/tello_msgs': /usr/bin/cmake /home/user/hcc_lab2/src/tello_ros/tello_msgs -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/tello_msgs
+[0.573s] -- The C compiler identification is GNU 9.4.0
+[1.168s] -- The CXX compiler identification is GNU 9.4.0
+[1.181s] -- Check for working C compiler: /usr/bin/cc
+[1.416s] -- Check for working C compiler: /usr/bin/cc -- works
+[1.419s] -- Detecting C compiler ABI info
+[1.630s] -- Detecting C compiler ABI info - done
+[1.652s] -- Detecting C compile features
+[1.653s] -- Detecting C compile features - done
+[1.658s] -- Check for working CXX compiler: /usr/bin/c++
+[1.826s] -- Check for working CXX compiler: /usr/bin/c++ -- works
+[1.829s] -- Detecting CXX compiler ABI info
+[2.036s] -- Detecting CXX compiler ABI info - done
+[2.059s] -- Detecting CXX compile features
+[2.063s] -- Detecting CXX compile features - done
+[2.079s] CMake Error at CMakeLists.txt:20 (find_package):
+[2.079s]   By not providing "Findament_cmake.cmake" in CMAKE_MODULE_PATH this project
+[2.081s]   has asked CMake to find a package configuration file provided by
+[2.082s]   "ament_cmake", but CMake did not find one.
+[2.082s] 
+[2.083s]   Could not find a package configuration file provided by "ament_cmake" with
+[2.085s]   any of the following names:
+[2.085s] 
+[2.086s]     ament_cmakeConfig.cmake
+[2.087s]     ament_cmake-config.cmake
+[2.087s] 
+[2.088s]   Add the installation prefix of "ament_cmake" to CMAKE_PREFIX_PATH or set
+[2.088s]   "ament_cmake_DIR" to a directory containing one of the above files.  If
+[2.090s]   "ament_cmake" provides a separate development package or SDK, be sure it
+[2.090s]   has been installed.
+[2.093s] 
+[2.097s] 
+[2.098s] -- Configuring incomplete, errors occurred!
+[2.099s] See also "/home/user/hcc_lab2/build/tello_msgs/CMakeFiles/CMakeOutput.log".
+[2.119s] Invoked command in '/home/user/hcc_lab2/build/tello_msgs' returned '1': /usr/bin/cmake /home/user/hcc_lab2/src/tello_ros/tello_msgs -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/tello_msgs

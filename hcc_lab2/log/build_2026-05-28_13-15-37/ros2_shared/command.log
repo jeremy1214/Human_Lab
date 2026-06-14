@@ -1,0 +1,6 @@
+Invoking command in '/home/user/hcc_lab2/build/ros2_shared': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared
+Invoked command in '/home/user/hcc_lab2/build/ros2_shared' returned '0': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake /home/user/hcc_lab2/src/ros2_shared -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/ros2_shared
+Invoking command in '/home/user/hcc_lab2/build/ros2_shared': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --build /home/user/hcc_lab2/build/ros2_shared -- -j4 -l4
+Invoked command in '/home/user/hcc_lab2/build/ros2_shared' returned '0': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --build /home/user/hcc_lab2/build/ros2_shared -- -j4 -l4
+Invoking command in '/home/user/hcc_lab2/build/ros2_shared': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --install /home/user/hcc_lab2/build/ros2_shared
+Invoked command in '/home/user/hcc_lab2/build/ros2_shared' returned '0': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --install /home/user/hcc_lab2/build/ros2_shared

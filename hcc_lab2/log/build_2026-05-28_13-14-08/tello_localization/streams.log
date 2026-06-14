@@ -1,0 +1,61 @@
+[1.553s] Invoking command in '/home/user/hcc_lab2/src/tello_localization': PYTHONPATH=/home/user/hcc_lab2/build/tello_localization/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages: /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/tello_localization build --build-base /home/user/hcc_lab2/build/tello_localization/build install --record /home/user/hcc_lab2/build/tello_localization/install.log --single-version-externally-managed install_data
+[1.830s] running egg_info
+[1.832s] creating ../../build/tello_localization/tello_localization.egg-info
+[1.833s] writing ../../build/tello_localization/tello_localization.egg-info/PKG-INFO
+[1.834s] writing dependency_links to ../../build/tello_localization/tello_localization.egg-info/dependency_links.txt
+[1.834s] writing entry points to ../../build/tello_localization/tello_localization.egg-info/entry_points.txt
+[1.834s] writing requirements to ../../build/tello_localization/tello_localization.egg-info/requires.txt
+[1.834s] writing top-level names to ../../build/tello_localization/tello_localization.egg-info/top_level.txt
+[1.842s] writing manifest file '../../build/tello_localization/tello_localization.egg-info/SOURCES.txt'
+[1.892s] reading manifest file '../../build/tello_localization/tello_localization.egg-info/SOURCES.txt'
+[1.894s] writing manifest file '../../build/tello_localization/tello_localization.egg-info/SOURCES.txt'
+[1.895s] running build
+[1.896s] running build_py
+[1.896s] creating /home/user/hcc_lab2/build/tello_localization/build
+[1.898s] creating /home/user/hcc_lab2/build/tello_localization/build/lib
+[1.900s] creating /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization
+[1.900s] copying tello_localization/control_tello_ekf.py -> /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization
+[1.901s] copying tello_localization/__init__.py -> /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization
+[1.901s] copying tello_localization/ekf_localization_node.py -> /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization
+[1.901s] copying tello_localization/tag_tf_broadcaster.py -> /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization
+[1.901s] copying tello_localization/apriltag_detector_node.py -> /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization
+[1.901s] running install
+[1.901s] running install_lib
+[1.903s] creating /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization
+[1.906s] copying /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization/control_tello_ekf.py -> /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization
+[1.906s] copying /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization/__init__.py -> /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization
+[1.907s] copying /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization/ekf_localization_node.py -> /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization
+[1.907s] copying /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization/tag_tf_broadcaster.py -> /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization
+[1.908s] copying /home/user/hcc_lab2/build/tello_localization/build/lib/tello_localization/apriltag_detector_node.py -> /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization
+[1.908s] byte-compiling /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization/control_tello_ekf.py to control_tello_ekf.cpython-38.pyc
+[1.910s] byte-compiling /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization/__init__.py to __init__.cpython-38.pyc
+[1.911s] byte-compiling /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization/ekf_localization_node.py to ekf_localization_node.cpython-38.pyc
+[1.912s] byte-compiling /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization/tag_tf_broadcaster.py to tag_tf_broadcaster.cpython-38.pyc
+[1.913s]   File "/home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization/ekf_localization_node.py", line 36
+[1.913s]     self.Sigma = ???                                        # TODO
+[1.913s]                  ^
+[1.914s] SyntaxError: invalid syntax
+[1.915s] 
+[1.915s] byte-compiling /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization/apriltag_detector_node.py to apriltag_detector_node.cpython-38.pyc
+[1.915s] running install_data
+[1.915s] copying package.xml -> /home/user/hcc_lab2/install/tello_localization/share/tello_localization
+[1.915s]   File "/home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization/apriltag_detector_node.py", line 24
+[1.916s]     FX = ???
+[1.916s]          ^
+[1.916s] SyntaxError: invalid syntax
+[1.916s] 
+[1.916s] creating /home/user/hcc_lab2/install/tello_localization/share/tello_localization/launch
+[1.916s] copying launch/localization_launch.py -> /home/user/hcc_lab2/install/tello_localization/share/tello_localization/launch
+[1.917s] creating /home/user/hcc_lab2/install/tello_localization/share/tello_localization/rviz
+[1.917s] copying rviz/config.rviz -> /home/user/hcc_lab2/install/tello_localization/share/tello_localization/rviz
+[1.917s] creating /home/user/hcc_lab2/install/tello_localization/share/tello_localization/map
+[1.917s] copying map/apriltag_map.yaml -> /home/user/hcc_lab2/install/tello_localization/share/tello_localization/map
+[1.917s] running install_egg_info
+[1.918s] Copying ../../build/tello_localization/tello_localization.egg-info to /home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages/tello_localization-0.1.0-py3.8.egg-info
+[1.918s] running install_scripts
+[1.950s] Installing apriltag_detector_node script to /home/user/hcc_lab2/install/tello_localization/lib/tello_localization
+[1.951s] Installing control_tello_ekf script to /home/user/hcc_lab2/install/tello_localization/lib/tello_localization
+[1.952s] Installing ekf_localization_node script to /home/user/hcc_lab2/install/tello_localization/lib/tello_localization
+[1.952s] Installing tag_tf_broadcaster script to /home/user/hcc_lab2/install/tello_localization/lib/tello_localization
+[1.953s] writing list of installed files to '/home/user/hcc_lab2/build/tello_localization/install.log'
+[1.992s] Invoked command in '/home/user/hcc_lab2/src/tello_localization' returned '0': PYTHONPATH=/home/user/hcc_lab2/build/tello_localization/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/user/hcc_lab2/install/tello_localization/lib/python3.8/site-packages: /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/tello_localization build --build-base /home/user/hcc_lab2/build/tello_localization/build install --record /home/user/hcc_lab2/build/tello_localization/install.log --single-version-externally-managed install_data

@@ -1,0 +1,6 @@
+Invoking command in '/home/user/hcc_lab2/build/tello_msgs': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake /home/user/hcc_lab2/src/tello_ros/tello_msgs -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/tello_msgs
+Invoked command in '/home/user/hcc_lab2/build/tello_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake /home/user/hcc_lab2/src/tello_ros/tello_msgs -DCMAKE_INSTALL_PREFIX=/home/user/hcc_lab2/install/tello_msgs
+Invoking command in '/home/user/hcc_lab2/build/tello_msgs': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --build /home/user/hcc_lab2/build/tello_msgs -- -j4 -l4
+Invoked command in '/home/user/hcc_lab2/build/tello_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --build /home/user/hcc_lab2/build/tello_msgs -- -j4 -l4
+Invoking command in '/home/user/hcc_lab2/build/tello_msgs': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --install /home/user/hcc_lab2/build/tello_msgs
+Invoked command in '/home/user/hcc_lab2/build/tello_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/foxy /usr/bin/cmake --install /home/user/hcc_lab2/build/tello_msgs

@@ -1,0 +1,10 @@
+Metadata-Version: 1.2
+Name: tello-localization
+Version: 0.1.0
+Summary: Detect AprilTags from a camera stream using pupil_apriltags.
+Home-page: UNKNOWN
+Maintainer: Your Name
+Maintainer-email: your_email@example.com
+License: MIT
+Description: UNKNOWN
+Platform: UNKNOWN

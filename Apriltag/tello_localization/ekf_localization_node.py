@@ -1,18 +1,13 @@
-import rclpy
-from rclpy.node import Node
-
-from geometry_msgs.msg import PoseArray
-from geometry_msgs.msg import PoseStamped
-from geometry_msgs.msg import TransformStamped
-from geometry_msgs.msg import PoseWithCovarianceStamped
-from geometry_msgs.msg import Twist
-from tello_msgs.msg import FlightData
-from nav_msgs.msg import Path
-
-import tf2_ros
-import numpy as np
 import math
 
+import numpy as np
+import rclpy
+import tf2_ros
+from geometry_msgs.msg import (PoseArray, PoseStamped,
+                               PoseWithCovarianceStamped, TransformStamped,
+                               Twist, TwistStamped)
+from nav_msgs.msg import Path
+from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R
 
 
@@ -21,7 +16,7 @@ class EKFLocalizationNode(Node):
     def __init__(self):
         super().__init__('ekf_localization_node')
         self.subscription = self.create_subscription(PoseArray, '/apriltag/detections', self.detection_callback, 10)
-        self.flight_sub = self.create_subscription(FlightData, '/flight_data', self.flight_data_callback, 10)
+        self.flight_sub = self.create_subscription(TwistStamped, '/tello/flight_data', self.flight_data_callback, 10)
         self.pose_pub = self.create_publisher(PoseWithCovarianceStamped, '/ekf_pose', 10)
         self.path_pub = self.create_publisher(Path, '/ekf_path', 10)
 
@@ -137,16 +132,19 @@ class EKFLocalizationNode(Node):
             self.predict(self.u)
         self.publish_pose()
 
-    def flight_data_callback(self, msg):
-        # (cm/s) -> (m/s)、FRD frame -> FLU frame
-        vx = msg.vgx / 100.0
-        vy = -msg.vgy / 100.0
-        vz = -msg.vgz / 100.0
-        # Degree -> Radian
+    def flight_data_callback(self, msg: TwistStamped):
+        # Velocity: cm/s in body FRD frame → m/s in FLU frame
+        # TwistStamped.twist.linear carries raw vgx/vgy/vgz (cm/s, FRD)
+        # FRD → FLU: flip Y and Z signs
+        vx =  msg.twist.linear.x / 100.0
+        vy = -msg.twist.linear.y / 100.0
+        vz = -msg.twist.linear.z / 100.0
+
+        # Attitude: degrees → radians
         now = self.get_clock().now()
-        roll_rad = math.radians(msg.roll)
-        pitch_rad = math.radians(msg.pitch)
-        yaw_rad = math.radians(msg.yaw)
+        roll_rad  = math.radians(msg.twist.angular.x)
+        pitch_rad = math.radians(msg.twist.angular.y)
+        yaw_rad   = math.radians(msg.twist.angular.z)
 
         self.u[0, 0] = vx
         self.u[1, 0] = vy

@@ -1,5 +1,6 @@
 import os
 from glob import glob
+
 from setuptools import setup
 
 package_name = 'tello_localization'
@@ -13,8 +14,11 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
         (os.path.join('share', package_name, 'rviz'), glob('rviz/*.rviz')),
         (os.path.join('share', package_name, 'map'), ['map/apriltag_map.yaml']),
+        # YOLO classification model for Stage 4
+        (os.path.join('share', package_name, 'model'), glob('model/*.onnx')),
     ],
-    install_requires=['setuptools', 'pupil-apriltags', 'opencv-python'],
+    install_requires=['setuptools', 'pupil-apriltags', 'opencv-python',
+                      'djitellopy', 'onnxruntime'],
     zip_safe=True,
     maintainer='Your Name',
     maintainer_email='your_email@example.com',
@@ -23,11 +27,12 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'tello_interface_node = tello_localization.tello_interface_node:main',
             'apriltag_detector_node = tello_localization.apriltag_detector_node:main',
             'tag_tf_broadcaster = tello_localization.tag_tf_broadcaster:main',
             'ekf_localization_node = tello_localization.ekf_localization_node:main',
             'control_tello_ekf = tello_localization.control_tello_ekf:main',
+            'image_classifier_node = tello_localization.image_classifier_node:main',
         ],
     },
 )
-

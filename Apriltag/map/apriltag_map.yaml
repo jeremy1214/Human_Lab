@@ -27,3 +27,16 @@ tags:
   - id: 12
     position: [-1.33, 5.01, 2.0]
     orientation_rpy: [-1.5708, 0.0, 0.0] 
+# landing tag
+  - id: 13
+    position: [3.24, 2.03, 1.37]
+    orientation_rpy: [-1.5708, 0.0, 0.0] 
+  - id: 14
+    position: [3.39, -1.57, 1.35]
+    orientation_rpy: [-1.5708, 0.0, 3.1416] 
+  - id: 15
+    position: [1.70, -1.57, 1.64]
+    orientation_rpy: [-1.5708, 0.0, 3.1416] 
+  - id: 16
+    position: [1.58, 2.03, 1.37]
+    orientation_rpy: [-1.5708, 0.0, 0.0] 

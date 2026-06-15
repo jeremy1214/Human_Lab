@@ -12,6 +12,13 @@ import Balloon_Detector
 # --- Classification constants (match image_classifier_node) ---
 CLASS_NAMES = ['cap', 'brr', 'trala', 'tung']
 LANDING_TAG = {'cap': 13, 'brr': 14, 'trala': 15, 'tung': 16}
+LANDING_TAG_WORLD = {
+    13: (3.24, 2.03, 1.37),
+    14: (3.39, -1.57, 1.35),
+    15: (1.70, -1.57, 1.64),
+    16: (1.58, 2.03, 1.37),
+}
+LANDING_WORLD_CENTER = tuple(np.mean(np.array(list(LANDING_TAG_WORLD.values())), axis=0))
 YOLO_INPUT_SIZE = 640
 YOLO_CONF_THRESH = 0.15
 YOLO_NMS_THRESH = 0.45
@@ -93,6 +100,20 @@ def find_brainrot_model(filename: str = 'brainrot_detect.onnx') -> str:
     raise FileNotFoundError(f"Cannot find '{filename}' in candidates: {candidates}")
 
 
+def _move_to_landing_center(tello, target_height=1.0, duration=4.0, speed=25):
+    """Fly roughly toward the center of the four landing tags after balloon touch."""
+    print('[Final Game] Moving toward landing area center...')
+    # Simple search/approach: rotate while moving forward to drive toward the center of the landing zone.
+    # This is not precise localization, but it moves the drone away from the balloon and toward the central field.
+    start = time.time()
+    while time.time() - start < duration:
+        # Forward with slight upward bias to move into the landing region.
+        tello.send_rc_control(0, 20, int((target_height - 0.35) * 20), speed)
+        time.sleep(0.1)
+    tello.send_rc_control(0, 0, 0, 0)
+    time.sleep(0.5)
+
+
 def main():
     # 1) Initialize Tello (Stage 1)
     print("[Final Game] Initializing Tello (Stage 1)...")
@@ -152,7 +173,7 @@ def main():
                 # call controller helper from Balloon_Detector
                 is_touched, pid_states = Balloon_Detector.track_and_control_tello(tello, tracked_pos, pid_states)
                 if is_touched:
-                    print('[Final Game] Touch action completed — proceeding to image classification')
+                    print('[Final Game] Touch action completed — proceeding to landing area center')
                     break
             else:
                 # continue searching (small yaw rotation)
@@ -167,6 +188,9 @@ def main():
         tello.land()
         tello.streamoff()
         return
+
+    # After touching balloon, move toward the central landing area of the four tags
+    _move_to_landing_center(tello, target_height=1.3, duration=5.0, speed=20)
 
     # stop motion and stream before moving to next stage
     tello.send_rc_control(0, 0, 0, 0)

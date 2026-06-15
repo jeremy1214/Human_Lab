@@ -237,67 +237,26 @@ def main():
         class_label = 'cap'
     print(f"[Final Game] Classification result: {class_label} (avg conf {class_conf:.2f})")
 
-    # 3b) Launch image classifier node (Stage 4) inside same process (Option A)
-    print('[Final Game] Starting image classifier node (Stage 4) inside this process...')
-    try:
-        import threading
-        import rclpy
-        from Apriltag.tello_localization.image_classifier_node import ImageClassifierNode, Stage
-
-        rclpy.init()
-        ic_node = ImageClassifierNode()
-        # pass classification result into the node and start navigation
-        ic_node.class_label = class_label
-        ic_node.target_tag_id = LANDING_TAG.get(class_label)
-        # move node state to navigating so it begins tag search
+    # 3b) Launch image classifier node (Stage 4) as subprocess
+    # Note: On Windows or without ROS2, we use subprocess instead of in-thread rclpy
+    print('[Final Game] Starting image classifier node (Stage 4) as subprocess...')
+    script_path = os.path.join(os.path.dirname(__file__), 'Apriltag', 'tello_localization', 'image_classifier_node.py')
+    if not os.path.exists(script_path):
+        print(f"[Final Game] ERROR: cannot find image classifier script at: {script_path}")
+    else:
+        # Pass classification result via environment variables so image_classifier_node can access it
+        env = os.environ.copy()
+        env['BRAINROT_CLASS_LABEL'] = class_label
+        env['BRAINROT_TARGET_TAG_ID'] = str(LANDING_TAG.get(class_label, 13))
+        
+        proc = subprocess.Popen(['python', script_path], env=env)
+        print(f'[Final Game] Image classifier started (pid={proc.pid}).')
+        print(f'  Classified as: {class_label} → Landing Tag ID: {LANDING_TAG.get(class_label, 13)}')
         try:
-            ic_node.stage = Stage.NAVIGATING
-        except Exception:
-            pass
-
-        def _spin_node():
-            try:
-                rclpy.spin(ic_node)
-            except KeyboardInterrupt:
-                pass
-            finally:
-                try:
-                    ic_node.destroy_node()
-                except Exception:
-                    pass
-                try:
-                    rclpy.shutdown()
-                except Exception:
-                    pass
-
-        th = threading.Thread(target=_spin_node, daemon=True)
-        th.start()
-        print(f'[Final Game] Image classifier node started in-thread (name={th.name}).')
-
-        # Wait for the node thread to finish (or until interrupted)
-        try:
-            th.join()
+            proc.wait()
         except KeyboardInterrupt:
-            print('[Final Game] Interrupted; shutting down image classifier node...')
-            try:
-                rclpy.shutdown()
-            except Exception:
-                pass
-
-    except Exception as e:
-        # Fallback: spawn as subprocess if rclpy or import fails
-        print(f"[Final Game] In-process start failed ({e}), falling back to subprocess.")
-        script_path = os.path.join(os.path.dirname(__file__), 'Apriltag', 'tello_localization', 'image_classifier_node.py')
-        if not os.path.exists(script_path):
-            print(f"[Final Game] ERROR: cannot find image classifier script at: {script_path}")
-        else:
-            proc = subprocess.Popen(['python', script_path])
-            print(f'[Final Game] Image classifier started (pid={proc.pid}). Attach to its terminal or logs to monitor.')
-            try:
-                proc.wait()
-            except KeyboardInterrupt:
-                print('[Final Game] KeyboardInterrupt, terminating image classifier subprocess...')
-                proc.terminate()
+            print('[Final Game] KeyboardInterrupt, terminating image classifier subprocess...')
+            proc.terminate()
 
     print('[Final Game] Done. Cleaning up Tello.')
     try:

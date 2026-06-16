@@ -2,50 +2,21 @@ import cv2
 import numpy as np
 import time
 from djitellopy import Tello
+import Start_Tello
 
 # =====================================================================
 # 1. 全局參數與相機內參設定 (參考 State Estimation Lab 3)
 # =====================================================================
-FOCAL_LENGTH_X = 920.0        # Tello 相機內參 fx (依據實驗室量測值微調)
-FOCAL_LENGTH_Y = 920.0        # Tello 相機內參 fy
-BALLOON_REAL_DIAMETER = 25.0  # 氣球實際直徑 (單位: 公分)，用於計算實體距離
+# 相機內參 (from Lab 1 calibration)
+FX, FY = 835.342103847164, 839.4691450667409
+CX, CY = 415.5366635247159, 355.11975613817964
+
+BALLOON_REAL_DIAMETER = 30.0  # 氣球實際直徑 (單位: 公分)，用於計算實體距離
 
 # 追蹤 PID 增益設定 [Kp, Ki, Kd]
 PID_X = [0.4, 0.0, 0.1]       # 左右誤差控制 (對應到 Tello 的 Yaw 軸自轉)
 PID_Y = [0.4, 0.0, 0.1]       # 上下誤差控制 (對應到 Tello 的 Throttle 上下)
 PID_Z = [0.5, 0.0, 0.1]       # 前後距離控制 (對應到 Tello 的 Pitch 前後)
-
-# =====================================================================
-# 2. Stage 1 模組化功能函式 (Initialization & Search)
-# =====================================================================
-
-def initialize_tello():
-    """ 初始化 Tello 並執行自主起飛 """
-    tello = Tello()
-    tello.connect()
-    print(f"[Init] Tello 連線成功，當前電量: {tello.get_battery()}%")
-    tello.streamon()
-    time.sleep(2.0)  # 等待串流穩定
-    
-    print("[Stage 1] 執行自主起飛...")
-    tello.takeoff()
-    time.sleep(1.5)  # 懸停穩定
-    return tello
-
-def rotate_to_start_angle(tello, target_yaw):
-    """ 根據抽籤決定的角度進行初始定量旋轉 (背對 Object Zone) """
-    if target_yaw == 0:
-        print("[Stage 1] 抽籤角度為 0 度，保持原方向。")
-        return
-    
-    print(f"[Stage 1] 執行抽籤初始角度轉向: {target_yaw} 度")
-    if target_yaw > 0:
-        tello.rotate_clockwise(target_yaw)
-    else:
-        tello.rotate_counter_clockwise(abs(target_yaw))
-        
-    tello.send_rc_control(0, 0, 0, 0) # 旋轉後煞車懸停
-    time.sleep(1.0)
 
 def search_balloon_pattern(tello, search_speed=25):
     """ 自主巡航搜尋。當尚未看見氣球時，控制 Tello 原地緩慢自轉 """
@@ -97,19 +68,19 @@ def detect_balloon_onnx(frame, net):
 def recover_3d_position(bbox, img_w, img_h):
     """ 參考 Lab 3.2: 依據相機內參與氣球大小，將 2D 影像特徵還原為 3D 相對物理坐標 """
     bx, by, bw, bh = bbox
-    cx = bx + bw // 2
-    cy = by + bh // 2
+    cx = bx + bw / 2.0
+    cy = by + bh / 2.0
     
-    # 計算相對於畫面中心的像素誤差
-    u_err = cx - (img_w // 2)
-    v_err = (img_h // 2) - cy  # 轉為向上為正
+    # 計算相對於主點的像素誤差
+    u_err = cx - CX
+    v_err = CY - cy  # 轉為向上為正
     
     # 相似三角形還原實體距離 Z (單位: 公分)
-    z_distance = (BALLOON_REAL_DIAMETER * FOCAL_LENGTH_X) / (float(bw) + 1e-5)
+    z_distance = (BALLOON_REAL_DIAMETER * FX) / (float(bw) + 1e-5)
     
     # 反投影計算實體空間中的 X 與 Y 偏差
-    x_distance = (u_err * z_distance) / FOCAL_LENGTH_X
-    y_distance = (v_err * z_distance) / FOCAL_LENGTH_Y
+    x_distance = (u_err * z_distance) / FX
+    y_distance = (v_err * z_distance) / FY
     
     return np.array([[x_distance], [y_distance], [z_distance]], dtype=np.float32)
 
@@ -158,12 +129,10 @@ def track_and_control_tello(tello, tracked_pos, pid_states):
 # =====================================================================
 
 def main():
-    # 現場抽籤結果輸入 (範例：抽到背對 90 度，請依現場手動更改此變數)
-    drawn_angle = 90 
     
     # 執行 Stage 1 初始化與定量轉向
-    tello = initialize_tello()
-    rotate_to_start_angle(tello, target_yaw=drawn_angle)
+    tello = Start_Tello.initialize_tello_stage1()
+    Start_Tello.rotate_to_start_angle(tello)
     
     # 載入氣球偵測 ONNX 模型
     balloon_net = cv2.dnn.readNetFromONNX("balloon.onnx")

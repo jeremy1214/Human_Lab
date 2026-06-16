@@ -30,6 +30,7 @@ Bugs fixed vs original Final_Game.py
 
 import math
 import os
+import random
 import time
 from collections import Counter
 
@@ -242,17 +243,8 @@ def main():
     print("  HCC 2026 Final Game  —  Autonomous Pipeline")
     print("=" * 56)
 
-    # ── Pre-flight: get drawn angle (before drone connects) ───────────────
-    # This is allowed — it's setup info, not in-flight control.
-    while True:
-        try:
-            raw = input("\n  Enter drawn starting angle in degrees (0 / 90 / 180 / 270): ")
-            drawn_angle = int(raw.strip())
-            print(f"  Drawn angle confirmed: {drawn_angle}°")
-            break
-        except ValueError:
-            print("  Please enter an integer (e.g. 90).")
-    input("\n  Connect laptop to Tello Wi-Fi, then press Enter to start...")
+    # ── Pre-flight: wait for start confirmation ─────────────────────────
+    input("\n  Connect laptop to Tello Wi-Fi, then press Enter to start Stage 1...")
 
     # ── Load models ───────────────────────────────────────────────────────
     balloon_net   = None
@@ -276,7 +268,7 @@ def main():
 
     # ── Stage 1: takeoff + rotate ─────────────────────────────────────────
     tello = Start_Tello.initialize_tello_stage1()
-    Start_Tello.rotate_to_start_angle(tello, target_yaw=drawn_angle)
+    Start_Tello.rotate_to_start_angle(tello)
     frame_read = tello.get_frame_read()
 
     # ── Kalman + PID state ────────────────────────────────────────────────

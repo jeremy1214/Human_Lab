@@ -214,7 +214,7 @@ class AutonomousPilot:
     ----------
     tello   : djitellopy.Tello (connected + streaming)
     ekf     : EKFLocalization
-    tag_det : AprilTagDetector  (for EKF localisation, tags 4-12)
+    tag_det : AprilTagDetector | None  (for EKF localisation, tags 4-12; may be None on DLL error)
     """
 
     def __init__(self, tello: Tello, ekf: EKFLocalization,
@@ -239,13 +239,18 @@ class AutonomousPilot:
             print(f"[Pilot] WARNING: {BRAINROT_MODEL_PATH} not found!")
 
         # AprilTag detector for landing-zone tags (13-16, real-time)
-        from pupil_apriltags import Detector as _ATDet
-        self._at_detector = _ATDet(families='tag36h11', nthreads=1,
-                                    quad_decimate=1.0, quad_sigma=0.0,
-                                    refine_edges=1, decode_sharpening=0.25)
+        self._at_detector = None
         self._cam_params = [835.342103847164, 839.4691450667409,
                             415.5366635247159, 355.11975613817964]
         self._tag_size   = 0.165
+        try:
+            from pupil_apriltags import Detector as _ATDet
+            self._at_detector = _ATDet(families='tag36h11', nthreads=1,
+                                        quad_decimate=1.0, quad_sigma=0.0,
+                                        refine_edges=1, decode_sharpening=0.25)
+        except Exception as e:
+            print(f"[Pilot] WARNING: AprilTag detector init failed ({e})")
+            print(f"[Pilot] Landing (Stage 4) will be unavailable")
 
         # ── Stage machine state ───────────────────────────────────────────────
         self.stage        = AutoStage.TAKEOFF
@@ -276,9 +281,10 @@ class AutonomousPilot:
         now = time.time()
 
         # Always try to update EKF from localisation tags 4-12
-        pose = self.tag_det.detect(frame)
-        if pose is not None:
-            self.ekf.update_from_detection(pose)
+        if self.tag_det is not None:
+            pose = self.tag_det.detect(frame)
+            if pose is not None:
+                self.ekf.update_from_detection(pose)
 
         # Annotate frame for display
         display = frame.copy()
@@ -515,15 +521,18 @@ class AutonomousPilot:
             return 0
 
     def _find_landing_tag(self, frame):
-        if self._target_tag is None:
+        if self._target_tag is None or self._at_detector is None:
             return None
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        tags = self._at_detector.detect(
-            gray, estimate_tag_pose=True,
-            camera_params=self._cam_params, tag_size=self._tag_size)
-        for t in tags:
-            if t.tag_id == self._target_tag:
-                return t
+        try:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            tags = self._at_detector.detect(
+                gray, estimate_tag_pose=True,
+                camera_params=self._cam_params, tag_size=self._tag_size)
+            for t in tags:
+                if t.tag_id == self._target_tag:
+                    return t
+        except Exception:
+            pass
         return None
 
     # ─── Display overlay ─────────────────────────────────────────────────────
@@ -632,8 +641,14 @@ def main():
     time.sleep(1.0)
 
     # ── EKF + AprilTag localisation ──────────────────────────────────────────
-    ekf     = EKFLocalization()
-    tag_det = AprilTagDetector(MAP_YAML)
+    ekf = EKFLocalization()
+    try:
+        tag_det = AprilTagDetector(MAP_YAML)
+    except FileNotFoundError as e:
+        print(f"[main] WARNING: AprilTag DLL not found ({e})")
+        print(f"[main] On Windows, install Visual C++ Redistributable or reinstall pupil-apriltags")
+        print(f"[main] Continuing without AprilTag support (will skip Stage 4 landing)")
+        tag_det = None
 
     # ── Background state thread ───────────────────────────────────────────────
     st = threading.Thread(target=_state_thread, args=(tello, ekf), daemon=True)

@@ -46,7 +46,7 @@ import Start_Tello  # Stage 1 takeoff helpers
 #  CONFIGURATION  —  tune these numbers before the competition
 # ═══════════════════════════════════════════════════════════════════════════════
 
-BALLOON_ONNX    = 'balloon.onnx'          # balloon YOLOv5 model (cv2.dnn)
+BALLOON_ONNX    = 'balloon.onnx'          # balloon YOLOv5 model (onnxruntime)
 BRAINROT_ONNX   = 'brainrot_detect.onnx'  # brainrot YOLOv8 model (onnxruntime)
 
 # ── AprilTag camera intrinsics (Lab 1 calibration) ──────────────────────────
@@ -127,6 +127,10 @@ def postprocess_yolo(output):
 
     results = []
     for cid in np.unique(class_f):
+        # Skip classes that are not present in our CLASS_NAMES mapping
+        if int(cid) < 0 or int(cid) >= len(CLASS_NAMES):
+            # unexpected class id from model — skip to avoid index errors
+            continue
         idx_c  = np.where(class_f == cid)[0]
         bxs_c  = np.stack([x1[idx_c], y1[idx_c],
                             x2[idx_c] - x1[idx_c],
@@ -156,11 +160,21 @@ def approach_and_land(tello, target_tag_id: int, frame_read):
     Rotate until the target landing AprilTag is visible then PID-approach
     to APPROACH_DIST_M and land.  ESC in the window triggers emergency land.
     """
-    at_det = ATDetector(
-        families='tag36h11', nthreads=1,
-        quad_decimate=1.0, quad_sigma=0.0,
-        refine_edges=1, decode_sharpening=0.25, debug=0,
-    )
+    try:
+        at_det = ATDetector(
+            families='tag36h11', nthreads=1,
+            quad_decimate=1.0, quad_sigma=0.0,
+            refine_edges=1, decode_sharpening=0.25, debug=0,
+        )
+    except Exception as e:
+        print(f"[Stage 4] ERROR initializing AprilTag detector: {e}")
+        print("[Stage 4] Performing emergency land")
+        try:
+            tello.send_rc_control(0, 0, 0, 0)
+            tello.land()
+        except Exception:
+            pass
+        return
     cam_params = [AT_FX, AT_FY, AT_CX, AT_CY]
 
     print(f"[Stage 4] Searching for AprilTag id={target_tag_id}...")
@@ -171,11 +185,20 @@ def approach_and_land(tello, target_tag_id: int, frame_read):
             time.sleep(0.02)
             continue
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        tags = at_det.detect(
-            gray, estimate_tag_pose=True,
-            camera_params=cam_params, tag_size=AT_TAG_SIZE,
-        )
+        try:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            tags = at_det.detect(
+                gray, estimate_tag_pose=True,
+                camera_params=cam_params, tag_size=AT_TAG_SIZE,
+            )
+        except Exception as e:
+            print(f"[Stage 4] AprilTag detection error: {e} — emergency land")
+            try:
+                tello.send_rc_control(0, 0, 0, 0)
+                tello.land()
+            except Exception:
+                pass
+            return
 
         target = next((t for t in tags if t.tag_id == target_tag_id), None)
         display = frame.copy()
@@ -247,16 +270,20 @@ def main():
     input("\n  Connect laptop to Tello Wi-Fi, then press Enter to start Stage 1...")
 
     # ── Load models ───────────────────────────────────────────────────────
-    balloon_net   = None
+    balloon_sess  = None
     brainrot_sess = None
     brainrot_inp  = None
 
     if os.path.exists(BALLOON_ONNX):
-        balloon_net = cv2.dnn.readNetFromONNX(BALLOON_ONNX)
-        print(f"[Init] Balloon model loaded ({BALLOON_ONNX})")
+        try:
+            balloon_sess = ort.InferenceSession(BALLOON_ONNX, providers=['CPUExecutionProvider'])
+            print(f"[Init] Balloon model loaded with ONNX Runtime ({BALLOON_ONNX})")
+        except Exception as exc:
+            print(f"[WARNING] Balloon model load failed in ONNX Runtime: {exc}")
+            print("[WARNING] Balloon detection will fall back to color-based detection.")
+            balloon_sess = None
     else:
-        print(f"[WARNING] {BALLOON_ONNX} not found — colour-fallback not implemented, "
-              "balloon detection will be disabled.")
+        print(f"[WARNING] {BALLOON_ONNX} not found — using color-based balloon detection fallback.")
 
     if os.path.exists(BRAINROT_ONNX):
         brainrot_sess = ort.InferenceSession(BRAINROT_ONNX,
@@ -313,8 +340,7 @@ def main():
                 cv2.putText(display, "Stage 2: Searching for balloon...",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
 
-                box = (Balloon_Detector.detect_balloon_onnx(frame, balloon_net)
-                       if balloon_net is not None else None)
+                box = Balloon_Detector.detect_balloon(frame, ort_sess=balloon_sess)
 
                 if box is not None:
                     print("【CP1 得分】偵測到氣球！ Balloon detected!")
@@ -336,8 +362,7 @@ def main():
                 cv2.putText(display, "Stage 3: Tracking balloon...",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-                box = (Balloon_Detector.detect_balloon_onnx(frame, balloon_net)
-                       if balloon_net is not None else None)
+                box = Balloon_Detector.detect_balloon(frame, ort_sess=balloon_sess)
                 tracked_pos = None
 
                 if box is not None:

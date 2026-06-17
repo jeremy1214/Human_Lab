@@ -5,28 +5,55 @@ Stage 2/3 helper functions: balloon detection, Kalman filter, PID tracking.
 Used by Final_Game.py — not meant to be run directly.
 
 Detection backend: Ultralytics YOLO (.pt weights).
-  pip install ultralytics
-No ONNX conversion needed — load balloon.pt directly.
-"""
 
-import time
+Bug fixes vs the previous version (see Final_Game.py for the full writeup):
+  1. FOCAL_LENGTH_X/Y were a rough guess (920.0/920.0). Replaced with the
+     same Lab-1-calibrated values already trusted for AprilTag detection
+     (835.34 / 839.47) — using two different focal lengths for the same
+     physical camera was the most likely cause of the wrong distance
+     estimate ("balloon still far but thinks it has reached target").
+  2. The old run_pid_core() ignored dt entirely (no time normalisation on
+     the integral/derivative terms) — gains tuned for one frame rate would
+     misbehave at another. Replaced with the shared, dt-aware PIDController
+     (see pid_controller.py, written to the same spec as pid.py's PID class).
+  3. The touch condition fired on a SINGLE frame where z_p <= threshold,
+     with no debounce — one noisy detection (YOLO box briefly too wide)
+     could trigger a full-speed sprint while the balloon was still far
+     away. BalloonTracker now requires TOUCH_CONFIRM_FRAMES consecutive
+     close+centred frames before reporting ready_to_sprint=True, and no
+     longer blocks inside update() with time.sleep() — the actual sprint
+     is executed by Final_Game.py as its own non-blocking stage so the
+     camera feed and event loop keep running during it.
+"""
 
 import cv2
 import numpy as np
+from pid_controller import PIDController
 
 # =====================================================================
-# 1. Camera intrinsics & PID gains (Lab 3)
+# 1. Camera intrinsics & PID gains
 # =====================================================================
-FOCAL_LENGTH_X = 920.0        # Tello camera fx (lab-measured, fine-tune as needed)
-FOCAL_LENGTH_Y = 920.0        # Tello camera fy
+# Same calibrated values used for AprilTag detection (Lab 1) — using a
+# different, uncalibrated focal length here was the root cause of the
+# wrong balloon-distance estimate.
+FOCAL_LENGTH_X = 835.342103847164
+FOCAL_LENGTH_Y = 839.4691450667409
+
 BALLOON_REAL_DIAMETER = 25.0  # cm — update with the size given on competition day
 
 # Tracking PID gains [Kp, Ki, Kd]
-PID_X = [0.4, 0.0, 0.1]       # left/right error → Tello yaw
-PID_Y = [0.4, 0.0, 0.1]       # up/down error → Tello throttle
-PID_Z = [0.5, 0.0, 0.1]       # forward/back distance → Tello pitch
+PID_X_GAINS = (0.4, 0.0, 0.08)   # left/right error → Tello yaw
+PID_Y_GAINS = (0.4, 0.0, 0.08)   # up/down error    → Tello throttle
+PID_Z_GAINS = (0.5, 0.0, 0.10)   # forward distance → Tello pitch
 
 BALLOON_CONF_THRESH = 0.7     # YOLO confidence threshold for balloon detection
+
+# Touch / sprint thresholds
+TOUCH_STANDOFF_CM    = 35.0   # PID_Z setpoint: hold this far from the balloon
+TOUCH_DISTANCE_CM    = 45.0   # once this close AND centred, consider "ready"
+TOUCH_CENTER_TOL_CM  = 10.0   # lateral tolerance for "centred"
+TOUCH_CONFIRM_FRAMES = 4      # require this many CONSECUTIVE ready frames
+                              # (debounce against a single noisy detection)
 
 
 # =====================================================================
@@ -37,18 +64,7 @@ def detect_balloon(frame: np.ndarray, model, conf_thresh: float = BALLOON_CONF_T
     """
     Detect the balloon in a BGR frame using an Ultralytics YOLO .pt model.
 
-    Parameters
-    ----------
-    frame : np.ndarray
-        BGR camera frame.
-    model : ultralytics.YOLO | None
-        Loaded balloon YOLO model. If None, returns None immediately.
-    conf_thresh : float
-        Minimum confidence to accept a detection.
-
-    Returns
-    -------
-    (x, y, w, h) tuple of the highest-confidence box, or None.
+    Returns (x, y, w, h) of the highest-confidence box, or None.
     """
     if model is None:
         return None
@@ -104,48 +120,63 @@ def recover_3d_position(bbox, img_w, img_h):
 
 
 # =====================================================================
-# 4. PID tracking & touch detection
+# 4. Balloon tracker: PID + debounced touch detection
 # =====================================================================
 
-def run_pid_core(error, prev_error, integral, pid_gains):
-    """Generic PID core."""
-    kp, ki, kd = pid_gains
-    integral  += error
-    derivative = error - prev_error
-    output = (kp * error) + (ki * integral) + (kd * derivative)
-    return int(np.clip(output, -100, 100)), error, integral
-
-
-def track_and_control_tello(tello, tracked_pos, pid_states):
+class BalloonTracker:
     """
-    Send 3-axis PID velocity commands based on the Kalman-filtered 3D position.
-    Triggers a forward sprint + touch when close enough and centred.
+    Stateful tracking controller. Create ONE instance per attempt (call
+    .reset() when re-entering SEARCH_BALLOON after losing the balloon).
 
-    Returns (is_touched: bool, updated_pid_states).
+    update() never blocks and never sends a sprint by itself — it just
+    reports when the drone has been close + centred for TOUCH_CONFIRM_FRAMES
+    consecutive frames, via ready_to_sprint. The caller (Final_Game.py) is
+    responsible for executing the actual sprint as its own non-blocking
+    stage so the camera/event loop keeps running.
     """
-    x_p, y_p, z_p = tracked_pos[0][0], tracked_pos[1][0], tracked_pos[2][0]
-    err_x_p, int_x, err_y_p, int_y, err_z_p, int_z = pid_states
 
-    yaw_speed, err_x_p, int_x = run_pid_core(x_p, err_x_p, int_x, PID_X)
-    ud_speed,  err_y_p, int_y = run_pid_core(y_p, err_y_p, int_y, PID_Y)
-    fb_speed,  err_z_p, int_z = run_pid_core(z_p - 35, err_z_p, int_z, PID_Z)
+    def __init__(self):
+        self.pid_yaw = PIDController(*PID_X_GAINS, output_limit=100, integral_limit=40)
+        self.pid_ud  = PIDController(*PID_Y_GAINS, output_limit=100, integral_limit=40)
+        self.pid_fb  = PIDController(*PID_Z_GAINS, output_limit=100, integral_limit=40)
+        self.close_streak = 0
 
-    updated_pid_states = (err_x_p, int_x, err_y_p, int_y, err_z_p, int_z)
+    def reset(self):
+        self.pid_yaw.reset()
+        self.pid_ud.reset()
+        self.pid_fb.reset()
+        self.close_streak = 0
 
-    if z_p <= 45.0 and abs(x_p) < 10:
-        print("[Action] 進入終點線！執行最後向前衝刺碰撞！")
-        tello.send_rc_control(0, 45, 0, 0)
-        time.sleep(0.8)
-        tello.send_rc_control(0, 0, 0, 0)
-        return True, updated_pid_states
+    def update(self, tracked_pos, dt: float):
+        """
+        Parameters
+        ----------
+        tracked_pos : Kalman-filtered [[x],[y],[z]] (cm), from kf.statePost[0:3]
+        dt : float
+            Seconds since the last call.
 
-    tello.send_rc_control(
-        0,
-        int(np.clip(fb_speed,  -40, 40)),
-        int(np.clip(ud_speed,  -30, 30)),
-        int(np.clip(yaw_speed, -30, 30)),
-    )
-    return False, updated_pid_states
+        Returns
+        -------
+        (lr, fb, ud, yaw, ready_to_sprint)
+            lr is always 0 (lateral correction is done via yaw, not strafing).
+        """
+        x_p = float(tracked_pos[0][0])
+        y_p = float(tracked_pos[1][0])
+        z_p = float(tracked_pos[2][0])
+
+        yaw_speed = self.pid_yaw.update(x_p, dt)
+        ud_speed  = self.pid_ud.update(y_p, dt)
+        fb_speed  = self.pid_fb.update(z_p - TOUCH_STANDOFF_CM, dt)
+
+        is_close_now = (z_p <= TOUCH_DISTANCE_CM) and (abs(x_p) < TOUCH_CENTER_TOL_CM)
+        self.close_streak = self.close_streak + 1 if is_close_now else 0
+        ready_to_sprint    = self.close_streak >= TOUCH_CONFIRM_FRAMES
+
+        lr  = 0
+        fb  = int(np.clip(fb_speed,  -40, 40))
+        ud  = int(np.clip(ud_speed,  -30, 30))
+        yaw = int(np.clip(yaw_speed, -30, 30))
+        return lr, fb, ud, yaw, ready_to_sprint
 
 
 def search_balloon_pattern(tello, search_speed=25):

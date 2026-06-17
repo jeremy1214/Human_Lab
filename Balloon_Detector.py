@@ -256,6 +256,66 @@ def track_and_control_tello(tello, tracked_pos, pid_states):
     tello.send_rc_control(0, int(np.clip(fb_speed, -40, 40)), int(np.clip(ud_speed, -30, 30)), int(np.clip(yaw_speed, -30, 30)))
     return False, updated_pid_states
 
+def navigate_to_reference_tag(tello, detector, frame, target_tag_id=4, hold_distance_m=1.5):
+    """
+    過渡階段：利用 AprilTag 導航，讓 Tello 移動到指定 Tag 前方的特定位置
+    :param target_tag_id: 用來校正/過渡位置的 AprilTag ID (例如地圖上的 ID 4)
+    :param hold_distance_m: 期望停留在距離該 Tag 前方幾公尺處
+    :return: True (已到達目標範圍), False (仍在導航或沒看見 Tag)
+    """
+    # 這裡假設 detector.detect() 回傳 camera 在世界系下的 pose，
+    # 或者我們直接修改/利用偵測器中獲取的相對 tvec (Tag 相對於相機的變位)
+    # 為了最直覺的閉迴圈控制，我們通常直接利用 Tag 在相機畫面中的相對位置與距離：
+    
+    # 呼叫 pupil-apriltags 偵測
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    tags = detector._detector.detect(gray, estimate_tag_pose=True, 
+                                     camera_params=(FX, FY, CX, CY), 
+                                     tag_size=TAG_SIZE)
+    
+    target_tag = None
+    for tag in tags:
+        if tag.tag_id == target_tag_id:
+            target_tag = tag
+            break
+            
+    if target_tag is None:
+        # 沒看見目標 Tag，原地緩慢原地自轉搜尋
+        tello.send_rc_control(0, 0, 0, 15)
+        return False
+
+    # 獲取 Tag 相對於相機的經緯度與距離 (單位：公分或公尺，這裡依據 pose_t 轉為公尺)
+    # tag.pose_t 是 [X, Y, Z]，X為左右、Y為上下、Z為前後距離
+    t_x = target_tag.pose_t[0][0]
+    t_y = target_tag.pose_t[1][0]
+    t_z = target_tag.pose_t[2][0]
+
+    # 計算誤差
+    err_x = t_x          # 期望置中 (0)
+    err_y = -t_y         # 期望上下置中 (相機 Y 向下，Tello 向上為正)
+    err_z = t_z - hold_distance_m  # 期望保持在前方 hold_distance_m 處
+
+    print(f"[AprilNav] 看到 Tag {target_tag_id} -> 誤差 X:{err_x:.2f}m, Y:{err_y:.2f}m, Z:{err_z:.2f}m")
+
+    # 抵達判定：三軸誤差小於門檻值 (例如 15 公分)
+    if abs(err_x) < 0.15 and abs(err_y) < 0.15 and abs(err_z) < 0.20:
+        tello.send_rc_control(0, 0, 0, 0) # 煞車懸停
+        print(f"[AprilNav] 成功抵達 Tag {target_tag_id} 預設起跑點！")
+        return True
+
+    # P 控制器增益 (公尺轉成 Tello 的 RC 速度指令 -100 ~ 100)
+    k_lr = 40
+    k_ud = 40
+    k_fb = 45
+
+    lr_speed = int(np.clip(err_x * k_lr, -30, 30))
+    ud_speed = int(np.clip(err_y * k_ud, -25, 25))
+    fb_speed = int(np.clip(err_z * k_fb, -30, 30))
+
+    # 發送控制，不給 yaw 速度，維持面向 Tag
+    tello.send_rc_control(lr_speed, fb_speed, ud_speed, 0)
+    return False
+
 # =====================================================================
 # 4. 主程式狀態機統合 (Main FSM Loop)
 # =====================================================================

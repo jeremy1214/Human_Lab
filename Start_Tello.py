@@ -38,7 +38,7 @@ def rotate_to_start_angle(tello):
     :param tello: Tello 飛行器物件
     :param target_yaw: 抽籤抽到的旋轉角度 (整數，正數為順時針，負數為逆時針)
     """
-    tello.rotate_clockwise(180)
+    tello.rotate_clockwise(90)
         
     # 旋轉後懸停 1 秒確保機身定點，準備切換至影像偵測
     tello.send_rc_control(0, 0, 0, 0)

@@ -306,7 +306,10 @@ def main():
     last_time      = time.time()
 
     # ── Stage state machine (explicit variable initialisation) ────────────
-    stage         = "SEARCH_BALLOON"
+    stage = "TAKEOFF"  # 起始狀態
+    # 建立 AprilTag 偵測器實例
+    from apriltag_detector import AprilTagDetector
+    tag_detector = AprilTagDetector('apriltag_map.yaml')
     touch_time    = None      # set when balloon is touched
     classify_start = None     # set when classification phase starts
     votes         = []
@@ -323,8 +326,8 @@ def main():
                 time.sleep(0.01)
                 continue
 
-            h, w  = frame.shape[:2]
             display = frame.copy()
+            h, w, _ = frame.shape
             now   = time.time()
 
             # ── Update Kalman prediction (always runs) ───────────────────
@@ -335,13 +338,31 @@ def main():
             kf.transitionMatrix[2, 5] = dt
             prediction = kf.predict()
 
+            box = Balloon_Detector.detect_balloon(frame, ort_sess=balloon_sess)
+
+            if stage == "TAKEOFF":
+                tello.takeoff()
+                time.sleep(1.0)
+                # 呼叫 Stage 1 的定量旋轉 (drawn_angle 來自你的預先輸入)
+                Start_Tello.rotate_to_start_angle(tello)
+                
+                # ✨ 關鍵修改：旋轉完不直接找氣球，先進入 AprilTag 定位導航狀態
+                stage = "GO_TO_APRILTAG"
+                print("[FSM] 轉向完畢，切換至 GO_TO_APRILTAG 階段...")
+
+            elif stage == "GO_TO_APRILTAG":
+                # 呼叫上面寫好的導航函式，移至地圖中的 Tag 4 前方 1.2 公尺處
+                # 你可以根據實際場地將 target_tag_id 設為靠近起飛點的 Landing Tag ID
+                is_arrived = Balloon_Detector.navigate_to_reference_tag(tello, tag_detector, frame, 
+                                                        target_tag_id=4, 
+                                                        hold_distance_m=1.2)
+                if is_arrived:
+                    print("[FSM] 導航就位！切換至 SEARCH_BALLOON 開始自轉搜尋氣球...")
+                    stage = "SEARCH_BALLOON"
             # ── SEARCH_BALLOON ───────────────────────────────────────────
-            if stage == "SEARCH_BALLOON":
+            elif stage == "SEARCH_BALLOON":
                 cv2.putText(display, "Stage 2: Searching for balloon...",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
-
-                box = Balloon_Detector.detect_balloon(frame, ort_sess=balloon_sess)
-
                 if box is not None:
                     print("【CP1 得分】偵測到氣球！ Balloon detected!")
                     cv2.putText(display, "有偵測到balloon",
@@ -361,8 +382,7 @@ def main():
             elif stage == "TRACK_AND_TOUCH":
                 cv2.putText(display, "Stage 3: Tracking balloon...",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-                box = Balloon_Detector.detect_balloon(frame, ort_sess=balloon_sess)
+                
                 tracked_pos = None
 
                 if box is not None:
@@ -406,7 +426,7 @@ def main():
                         print("【CP2 待評分】碰撞氣球！TA please judge touch.")
                         tello.send_rc_control(0, 0, 0, 0)
                         touch_time = time.time()
-                        stage = "POST_TOUCH_HOVER"
+                        # stage = "POST_TOUCH_HOVER"
 
             # ── POST_TOUCH_HOVER ─────────────────────────────────────────
             elif stage == "POST_TOUCH_HOVER":

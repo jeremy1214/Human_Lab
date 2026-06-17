@@ -47,13 +47,13 @@ PID_X_GAINS = (0.4, 0.0, 0.08)   # left/right error → Tello yaw
 PID_Y_GAINS = (0.4, 0.0, 0.08)   # up/down error    → Tello throttle
 PID_Z_GAINS = (0.5, 0.0, 0.10)   # forward distance → Tello pitch
 
-BALLOON_CONF_THRESH = 0.7     # YOLO confidence threshold for balloon detection
+BALLOON_CONF_THRESH = 0.75     # YOLO confidence threshold for balloon detection
 
 # Touch / sprint thresholds
 TOUCH_STANDOFF_CM    = 35.0   # PID_Z setpoint: hold this far from the balloon
-TOUCH_DISTANCE_CM    = 45.0   # once this close AND centred, consider "ready"
-TOUCH_CENTER_TOL_CM  = 10.0   # lateral tolerance for "centred"
-TOUCH_HEIGHT_TOL_CM  = 15.0
+TOUCH_DISTANCE_CM    = 60.0   # once this close AND centred, consider "ready"
+TOUCH_CENTER_TOL_CM  = 15.0   # lateral tolerance for "centred"
+TOUCH_HEIGHT_TOL_CM  = 10.0
 TOUCH_CONFIRM_FRAMES = 4      # require this many CONSECUTIVE ready frames
                               # (debounce against a single noisy detection)
 
@@ -167,7 +167,7 @@ class BalloonTracker:
         z_p = float(tracked_pos[2][0])
 
         yaw_speed = self.pid_yaw.update(x_p, dt)
-        ud_speed  = self.pid_ud.update(y_p, dt)
+        ud_speed  = self.pid_ud.update(y_p - TOUCH_HEIGHT_TOL_CM, dt)
         fb_speed  = self.pid_fb.update(z_p - TOUCH_STANDOFF_CM, dt)
 
         is_close_now = (z_p <= TOUCH_DISTANCE_CM) and (abs(x_p) < TOUCH_CENTER_TOL_CM) and (abs(y_p) < TOUCH_HEIGHT_TOL_CM)
@@ -181,6 +181,6 @@ class BalloonTracker:
         return lr, fb, ud, yaw, ready_to_sprint
 
 
-def search_balloon_pattern(tello, search_speed=25):
+def search_balloon_pattern(tello, search_speed=35):
     """Autonomous yaw-only search rotation (rule-compliant: no manual control)."""
     tello.send_rc_control(0, 0, 0, search_speed)

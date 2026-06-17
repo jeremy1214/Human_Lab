@@ -18,34 +18,36 @@ Pipeline
   [Stage 4a]  Re-run the SAME scan→fly→rescan loop back to the 15/16
               midpoint (the drone may have drifted during the chase)
   [Stage 4b]  Brainrot classification (majority vote)
-  [Stage 4c]  Re-run the scan→fly→rescan loop ONE more time (drift check
-              before the final approach — deadzone kept large here too,
-              for an easier hand-off into the precise landing approach)
-  [Stage 4d]  Rotate (stop-and-look) until landing AprilTag visible →
-              PID approach → land
+  [Stage 4c]  Re-run the scan→fly→rescan loop ONE more time (drift check)
+  [Stage 4d]  Scan→fly→rescan to a standoff point directly in front of the
+              CLASSIFIED landing tag (tight deadzone, to land inside the
+              30x30cm marked box) → land.
 
-Changes in this revision
---------------------------
-  1. Stage 1b (and the two new Stage-4 navigation passes) no longer stream
-     continuous RC velocity while requiring the tag to stay in view the
-     whole time. Instead: scan for ANY tag (stop-and-look) → estimate full
-     world pose from that ONE tag → fly DIRECTLY to the target with a
-     single relative Tello "go" maneuver (djitellopy go_xyz_speed, using
-     the same body-frame error decomposition already validated by
-     simulation) → rescan (possibly a different tag is now visible) →
-     check against an ENLARGED deadzone → repeat if not yet inside it.
-     This is far more robust to losing tag visibility mid-motion than
-     trying to hold a continuous closed loop on one tag while rotating.
-  2. The drone now also returns to the 15/16 midpoint AFTER touching the
-     balloon (it may have drifted far away during the chase), classifies
-     the brainrot image there, then re-runs the same nav loop once more
-     (drift check) before handing off to the precise per-tag landing
-     approach.
-  3. Both deadzones (initial nav-to-point, and the post-classify recheck)
-     are intentionally larger than before — this stage just needs to get
-     the drone roughly back into the open area facing the right way;
-     the final approach_and_land() does the precise centering on the
-     SPECIFIC landing tag.
+Fixes in this revision
+-------------------------
+  1. Altitude is no longer part of the one-shot "go" maneuver. Folding a
+     height correction into go_xyz_speed's z argument caused large,
+     compounding climbs ("flies too high") whenever the height reading
+     was off, AND wasn't continuously active. Altitude is now held by its
+     own PIDController, running continuously (every frame) during the
+     stop-and-look scan phase — active the whole time, never lumped into
+     a single ballistic jump.
+  2. After every go_xyz_speed/rotate command, the code now waits and
+     discards a few frames before trusting the next AprilTag detection.
+     The Tello's video pipeline lags during movement commands (a known
+     djitellopy issue — frames keep arriving from before the move
+     finished), so without this, the very next "scan" would localize off
+     a stale frame, compute another large correction on top of a move
+     that hadn't actually been reflected yet, and the drone would drift
+     in what looks like "weird directions." This also addresses the
+     apparent stream pause during these maneuvers.
+  3. The final landing approach no longer just lands the moment the
+     target tag is glimpsed. It now computes a world-frame standoff point
+     directly in front of the SPECIFIC classified tag (verified by
+     round-trip simulation) and reuses the same scan→fly→rescan routine,
+     restricted to that one tag id, with a tight deadzone sized to land
+     inside the 30x30cm marked box — instead of a separate continuous-PID
+     approach that could trigger immediately on a noisy first detection.
 
 Detection backend
 ------------------
@@ -91,45 +93,58 @@ AT_CX, AT_CY = 415.5366635247159, 355.11975613817964
 # NOTE: verify this matches the *printed* tags used at the competition venue.
 AT_TAG_SIZE = 0.165
 
-# ── Scan-fly-rescan navigation (used 3x: pre-balloon, post-touch, post-classify) ──
+# ── Scan-fly-rescan navigation (used for the 15/16-midpoint passes) ─────────
 NAV_TARGET_IDS  = (15, 16)              # fly to the midpoint of these tags
 NAV_WALL_IDS    = (4, 5, 6, 7, 8, 9)    # face away from this wall
-NAV_HEIGHT_CM   = 130                   # cruise height during navigation
+NAV_HEIGHT_CM   = 135                   # cruise height during navigation
 
 # Deadzone — intentionally large: this stage just needs to get the drone
 # roughly back to the open area facing the right way, not landing-precise.
-NAV_POS_TOL_M   = 0.5
-NAV_YAW_TOL_RAD = math.radians(30)
+NAV_POS_TOL_M   = 0.35
+NAV_YAW_TOL_RAD = math.radians(20)
 
-NAV_GO_SPEED_CMS   = 30    # speed for the one-shot relative "go" maneuver
-NAV_MIN_MOVE_CM     = 10   # Tello SDK requires each axis to be 0 or >= this
-NAV_MAX_MOVE_CM     = 200  # safety cap per single move, per axis
-NAV_MAX_ITERATIONS  = 2    # give up (and proceed anyway) after this many cycles
-NAV_SCAN_WARN_S     = 8.0  # print a reminder if no tag found within this long
+NAV_GO_SPEED_CMS   = 30    # speed for the one-shot relative "go" maneuver (xy only)
+NAV_MIN_MOVE_CM    = 10    # Tello SDK requires each axis to be 0 or >= this
+NAV_MAX_MOVE_CM    = 300   # safety cap per single move, per axis
+NAV_MAX_ITERATIONS = 1     # give up (and proceed anyway) after this many cycles
+NAV_SCAN_WARN_S    = 8.0   # print a reminder if no tag found within this long
+
+# A single AprilTag pose estimate is noisy. Once a tag is first spotted, hold
+# still and collect several readings, then use their (circular-mean-aware)
+# average for the move decision instead of trusting one frame.
+NAV_POSE_SAMPLES        = 10
+NAV_POSE_COLLECT_TIMEOUT = 6.0   # give up collecting (use whatever we have) after this long
+
+# Altitude is held by its OWN continuous PID during scanning (not part of
+# the ballistic "go" maneuver — see fix #1 above).
+NAV_ALT_GAINS = (0.6, 0.0, 0.1)   # (kp, ki, kd) on (NAV_HEIGHT_CM - get_height())
+NAV_ALT_LIMIT = 25
+
+# Video lags behind movement commands — settle + discard a few frames before
+# trusting the next detection (see fix #2 above).
+NAV_SETTLE_S      = 1.0
+NAV_FLUSH_FRAMES  = 5
+
+# ── Final landing approach (Stage 4d): standoff point in front of ONE tag ──
+LANDING_APPROACH_DIST_M = 0.55     # standoff distance — middle of the 40-70cm spec
+LANDING_POS_TOL_M       = 0.15     # tight: must land inside the 30x30cm box
+LANDING_YAW_TOL_RAD     = math.radians(20)
+LANDING_MAX_ITERATIONS  = 1
 
 # ── Classification ────────────────────────────────────────────────────────────
 LANDING_TAG          = {'cap': 13, 'brr': 14, 'trala': 15, 'tung': 16}
 CLASSIFY_FRAMES      = 20
 MIN_VOTE_FRACTION    = 0.50
 CLASSIFY_TIMEOUT     = 30.0
-CLASSIFY_CONF_THRESH = 0.15
-
-# ── Stage-4 final approach (unchanged: precise, continuous, single target tag) ──
-APPROACH_DIST_M = 0.55
-LAND_POS_TOL    = 0.10
-LAND_LAT_TOL    = 0.08
-KP_FWD, KI_FWD, KD_FWD = 40.0, 0.0, 8.0
-KP_LAT, KI_LAT, KD_LAT = 50.0, 0.0, 10.0
-KP_ALT, KI_ALT, KD_ALT = 40.0, 0.0, 8.0
-KP_YAW, KI_YAW, KD_YAW = 50.0, 0.0, 5.0
+CLASSIFY_CONF_THRESH = 0.3
 
 # ── Shared stop-and-look search pattern (continuous yaw blurs AprilTag detection) ──
-SEARCH_YAW_PCT  = 25
+SEARCH_YAW_PCT  = 40
 SEARCH_ROTATE_S = 0.4
 SEARCH_PAUSE_S  = 0.6
 
 # ── Touch sprint (non-blocking stage, see TOUCH_SPRINT below) ──
-TOUCH_SPRINT_FB       = 45
+TOUCH_SPRINT_FB       = 70
 TOUCH_SPRINT_DURATION = 0.8
 
 # ── Timing ────────────────────────────────────────────────────────────────────
@@ -149,11 +164,15 @@ def find_map_yaml():
     raise FileNotFoundError(f"apriltag_map.yaml not found. Tried: {candidates}")
 
 
-def stop_and_look_step(tello, search_state: dict):
+def stop_and_look_step(tello, search_state: dict, ud: int = 0):
     """
     Continuous yaw rotation blurs frames enough that pupil_apriltags often
     misses tags entirely. Alternate short rotation bursts with still pauses
     so the detector gets a sharp frame to work with.
+
+    `ud` lets the caller fold in a continuously-active altitude correction
+    (e.g. from a PIDController) without it being a separate, competing
+    send_rc_control call.
 
     search_state must have keys 'rotating' (bool) and 'phase_start' (float),
     mutated in place. Call this once per frame whenever no tag is visible.
@@ -162,13 +181,13 @@ def stop_and_look_step(tello, search_state: dict):
     elapsed = now - search_state['phase_start']
 
     if search_state['rotating']:
-        tello.send_rc_control(0, 0, 0, SEARCH_YAW_PCT)
+        tello.send_rc_control(0, 0, ud, SEARCH_YAW_PCT)
         if elapsed > SEARCH_ROTATE_S:
             tello.send_rc_control(0, 0, 0, 0)
             search_state['rotating']    = False
             search_state['phase_start'] = now
     else:
-        tello.send_rc_control(0, 0, 0, 0)
+        tello.send_rc_control(0, 0, ud, 0)
         if elapsed > SEARCH_PAUSE_S:
             search_state['rotating']    = True
             search_state['phase_start'] = now
@@ -201,50 +220,113 @@ def _rotate_by_yaw_err(tello, yaw_err_rad: float, min_deg: int = 3):
         tello.rotate_clockwise(abs(deg))
 
 
+def _settle_and_flush(frame_read, settle_time: float = NAV_SETTLE_S, flush_frames: int = NAV_FLUSH_FRAMES):
+    """
+    After a blocking maneuver, the Tello's video pipeline is typically still
+    behind (a known djitellopy/Tello quirk — frames from before the move
+    finished keep arriving for a bit). Wait, then pull and discard a few
+    frames, so the NEXT detection is from a frame that actually reflects
+    where the drone is now.
+    """
+    time.sleep(settle_time)
+    for _ in range(flush_frames):
+        _ = frame_read.frame
+        time.sleep(0.05)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
-#  SCAN → ESTIMATE → FLY DIRECTLY → RESCAN → VERIFY DEADZONE
+#  SCAN → ESTIMATE → FLY DIRECTLY
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def navigate_to_point(tello, frame_read, at_det: ATDetector, tag_pose_dict: dict,
                       target_x: float, target_y: float, target_yaw: float,
                       pos_tol: float = NAV_POS_TOL_M, yaw_tol: float = NAV_YAW_TOL_RAD,
-                      max_iterations: int = NAV_MAX_ITERATIONS, label: str = "Nav"):
+                      max_iterations: int = NAV_MAX_ITERATIONS, label: str = "Nav",
+                      allowed_tag_ids=None):
     """
-    Repeatedly: scan for ANY AprilTag (stop-and-look), estimate the drone's
-    full world pose from that single tag, fly DIRECTLY toward the target
-    with one relative 'go' maneuver, then rescan (a different tag may now
-    be the one visible) to verify. Loops until within (pos_tol, yaw_tol)
-    or max_iterations is reached.
+    Repeatedly: scan for a tag (stop-and-look, with continuous altitude
+    PID active the whole time), then HOLD STILL and collect NAV_POSE_SAMPLES
+    pose estimates from that spot and average them (a single AprilTag pose
+    reading is noisy — circular-mean-aware averaging smooths that out, see
+    apriltag_localizer.average_poses). Fly DIRECTLY toward the target with
+    one relative 'go' maneuver based on the averaged pose (XY only —
+    altitude is handled separately, see above), settle + flush stale video
+    frames, then repeat. Loops until within (pos_tol, yaw_tol) or
+    max_iterations is reached.
+
+    allowed_tag_ids : optional iterable of tag ids. If given, only those
+    tags are trusted for localization this call (e.g. lock onto ONE
+    specific landing tag instead of "any" tag in the map).
     """
-    cam_params = [AT_FX, AT_FY, AT_CX, AT_CY]
+    cam_params  = [AT_FX, AT_FY, AT_CX, AT_CY]
+    pid_alt     = PIDController(*NAV_ALT_GAINS, output_limit=NAV_ALT_LIMIT)
+    allowed_set = set(allowed_tag_ids) if allowed_tag_ids is not None else None
+
     print(f"[{label}] Navigating to ({target_x:.2f}, {target_y:.2f}) "
           f"yaw={math.degrees(target_yaw):.1f}°  "
           f"(deadzone: {pos_tol:.2f}m / {math.degrees(yaw_tol):.1f}°)")
 
     for iteration in range(1, max_iterations + 1):
-        # ── Scan for any tag (stop-and-look) ─────────────────────────────
-        search_state  = {'rotating': True, 'phase_start': time.time()}
-        scan_start    = time.time()
-        warned        = False
-        pose          = None
+        # ── Scan for a tag, then HOLD STILL and collect several pose samples ──
+        # (a single AprilTag pose estimate is noisy — average several readings
+        # taken from the same spot instead of acting on one frame)
+        search_state     = {'rotating': True, 'phase_start': time.time()}
+        scan_start       = time.time()
+        last_t           = time.time()
+        warned           = False
+        samples          = []
+        collect_deadline = None
 
-        while pose is None:
+        while len(samples) < NAV_POSE_SAMPLES:
             frame = frame_read.frame
             if frame is None:
                 time.sleep(0.02)
                 continue
 
+            now = time.time()
+            dt  = max(now - last_t, 1e-3)
+            last_t = now
+
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             tags = at_det.detect(gray, estimate_tag_pose=True,
                                  camera_params=cam_params, tag_size=AT_TAG_SIZE)
-            pose = al.localize_best_tag(tags, tag_pose_dict)
+            if allowed_set is not None:
+                tags = [t for t in tags if t.tag_id in allowed_set]
+            one_pose = al.localize_best_tag(tags, tag_pose_dict)
 
+            alt_err = NAV_HEIGHT_CM - tello.get_height()
+            ud      = int(pid_alt.update(alt_err, dt))
             display = frame.copy()
-            if pose is None:
-                rotating = stop_and_look_step(tello, search_state)
+
+            if one_pose is not None:
+                samples.append(one_pose)
+                if collect_deadline is None:
+                    collect_deadline = time.time() + NAV_POSE_COLLECT_TIMEOUT
+                tello.send_rc_control(0, 0, ud, 0)   # hold still, just hold altitude
                 cv2.putText(display,
                             f"[{label}] iter {iteration}/{max_iterations}: "
-                            f"{'rotating' if rotating else 'looking'} for any AprilTag...",
+                            f"collecting pose samples {len(samples)}/{NAV_POSE_SAMPLES}",
+                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 220, 100), 2)
+
+            elif collect_deadline is not None:
+                # Already started collecting — tag flickered out briefly. Hold
+                # still and keep trying rather than throwing away good samples.
+                tello.send_rc_control(0, 0, ud, 0)
+                cv2.putText(display,
+                            f"[{label}] iter {iteration}/{max_iterations}: "
+                            f"tag flickered, holding ({len(samples)}/{NAV_POSE_SAMPLES} so far)",
+                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 165, 255), 2)
+                if time.time() > collect_deadline:
+                    print(f"[{label}] Lost tag while collecting — "
+                          f"using {len(samples)} sample(s) gathered so far")
+                    break
+
+            else:
+                # Haven't found a tag at all yet — scan.
+                rotating = stop_and_look_step(tello, search_state, ud=ud)
+                cv2.putText(display,
+                            f"[{label}] iter {iteration}/{max_iterations}: "
+                            f"{'rotating' if rotating else 'looking'} for AprilTag... (ud={ud})",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 165, 255), 2)
                 if not warned and time.time() - scan_start > NAV_SCAN_WARN_S:
                     print(f"[{label}] Still scanning for a tag ({time.time()-scan_start:.0f}s)...")
@@ -258,6 +340,13 @@ def navigate_to_point(tello, frame_read, at_det: ATDetector, tag_pose_dict: dict
             time.sleep(0.02)
 
         tello.send_rc_control(0, 0, 0, 0)
+
+        if not samples:
+            print(f"[{label}] No usable pose samples this iteration — retrying.")
+            continue
+
+        pose = al.average_poses(samples)
+        print(f"[{label}] Averaged {len(samples)} pose sample(s).")
         x, y, z, yaw = pose
         dx, dy  = target_x - x, target_y - y
         pos_err = math.hypot(dx, dy)
@@ -270,22 +359,23 @@ def navigate_to_point(tello, frame_read, at_det: ATDetector, tag_pose_dict: dict
             print(f"[{label}] Within deadzone — done.")
             return True
 
-        # ── Fly DIRECTLY to the estimated point (one-shot relative 'go') ──
+        # ── Fly DIRECTLY to the estimated point (XY only — one-shot relative 'go') ──
         fwd_err, right_err = al.world_error_to_body(dx, dy, yaw)
         forward_cm = _clamp_move(fwd_err * 100)
         left_cm    = _clamp_move(-right_err * 100)
-        alt_cm     = _clamp_move(NAV_HEIGHT_CM - tello.get_height())
 
-        if forward_cm or left_cm or alt_cm:
-            print(f"[{label}]   -> go(forward={forward_cm}cm, left={left_cm}cm, up={alt_cm}cm)")
+        if forward_cm or left_cm:
+            print(f"[{label}]   -> go(forward={forward_cm}cm, left={left_cm}cm)")
             try:
-                tello.go_xyz_speed(forward_cm, left_cm, alt_cm, NAV_GO_SPEED_CMS)
+                tello.go_xyz_speed(forward_cm, left_cm, 0, NAV_GO_SPEED_CMS)
             except Exception as e:
                 print(f"[{label}]   go_xyz_speed failed ({e}) — will retry next iteration")
 
         # ── Rotate to face the target heading ─────────────────────────────
         _rotate_by_yaw_err(tello, yaw_err)
-        time.sleep(0.3)
+
+        # ── Let the video pipeline catch up before trusting the next scan ──
+        _settle_and_flush(frame_read)
 
     print(f"[{label}] Max iterations reached without converging — proceeding anyway.")
     return False
@@ -383,96 +473,6 @@ def run_classification(tello, frame_read, brainrot_model):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  STAGE 4d: AprilTag PID approach → land  (precise, single target tag)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def approach_and_land(tello, target_tag_id: int, frame_read, at_det: ATDetector):
-    """
-    Stop-and-look rotation to find the target landing AprilTag, then PID-approach
-    to APPROACH_DIST_M and land. ESC in the window triggers emergency land.
-    """
-    cam_params = [AT_FX, AT_FY, AT_CX, AT_CY]
-
-    pid_fwd = PIDController(KP_FWD, KI_FWD, KD_FWD, output_limit=25)
-    pid_lat = PIDController(KP_LAT, KI_LAT, KD_LAT, output_limit=20)
-    pid_alt = PIDController(KP_ALT, KI_ALT, KD_ALT, output_limit=20)
-    pid_yaw = PIDController(KP_YAW, KI_YAW, KD_YAW, output_limit=35)
-
-    search_state = {'rotating': True, 'phase_start': time.time()}
-    last_t = time.time()
-
-    print(f"[Stage 4d] Searching for landing AprilTag id={target_tag_id}...")
-
-    while True:
-        frame = frame_read.frame
-        if frame is None:
-            time.sleep(0.02)
-            continue
-
-        now = time.time()
-        dt  = max(now - last_t, 1e-3)
-        last_t = now
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        tags = at_det.detect(gray, estimate_tag_pose=True,
-                             camera_params=cam_params, tag_size=AT_TAG_SIZE)
-        target  = next((t for t in tags if t.tag_id == target_tag_id), None)
-        display = frame.copy()
-
-        if target is None:
-            rotating = stop_and_look_step(tello, search_state)
-            cv2.putText(display, f"Stage 4d: {'rotating' if rotating else 'looking'} "
-                                  f"for tag {target_tag_id}",
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
-        else:
-            tx = float(target.pose_t[0])
-            ty = float(target.pose_t[1])
-            tz = float(target.pose_t[2])
-
-            err_fwd = tz - APPROACH_DIST_M
-            err_lat = tx
-            err_alt = ty
-            yaw_err = math.atan2(target.pose_R[1, 0], target.pose_R[0, 0])
-
-            fb  = pid_fwd.update(err_fwd, dt)
-            lr  = pid_lat.update(err_lat, dt)
-            ud  = -pid_alt.update(err_alt, dt)
-            yaw = -pid_yaw.update(yaw_err, dt)
-
-            tello.send_rc_control(int(lr), int(fb), int(ud), int(yaw))
-
-            cv2.putText(display,
-                        f"Stage 4d: tag {target_tag_id}  dist={tz:.2f}m  "
-                        f"lat={tx:.2f}m  alt={ty:.2f}m",
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
-            cv2.putText(display,
-                        f"err fwd={err_fwd:.2f}  lat={err_lat:.2f}  alt={err_alt:.2f}",
-                        (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 220, 255), 2)
-
-            if (abs(err_fwd) < LAND_POS_TOL and
-                    abs(err_lat) < LAND_LAT_TOL and
-                    abs(err_alt) < LAND_LAT_TOL):
-                print("[Stage 4d] In position → landing!")
-                tello.send_rc_control(0, 0, 0, 0)
-                time.sleep(0.3)
-                tello.land()
-                cv2.putText(display, "LANDING!", (10, 90),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
-                cv2.imshow('HCC Final Game', display)
-                cv2.waitKey(1500)
-                return
-
-        cv2.imshow('HCC Final Game', display)
-        if cv2.waitKey(1) & 0xFF == 27:
-            print("[Emergency] ESC → landing!")
-            tello.send_rc_control(0, 0, 0, 0)
-            tello.land()
-            return
-
-        time.sleep(0.05)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -515,8 +515,6 @@ def main():
     Start_Tello.rotate_to_start_angle(tello, target_yaw=drawn_angle)
     frame_read = tello.get_frame_read()
 
-    target_tag_id = None
-
     try:
         # ── Stage 1b: scan → estimate → fly → rescan → verify deadzone ──────
         navigate_to_point(tello, frame_read, at_det, tag_pose_dict,
@@ -529,7 +527,7 @@ def main():
         lost_counter    = 0
         balloon_tracker = Balloon_Detector.BalloonTracker()
 
-        stage        = "SEARCH_BALLOON"
+        stage        = "SEARCH_BALLOON" #"SEARCH_BALLOON"
         touch_time   = None
         sprint_start = None
         last_time    = time.time()
@@ -568,7 +566,7 @@ def main():
                     balloon_tracker.reset()
                     stage = "TRACK_AND_TOUCH"
                 else:
-                    Balloon_Detector.search_balloon_pattern(tello, search_speed=25)
+                    Balloon_Detector.search_balloon_pattern(tello, search_speed=35)
 
             # ── TRACK_AND_TOUCH ──────────────────────────────────────────
             elif stage == "TRACK_AND_TOUCH":
@@ -634,7 +632,7 @@ def main():
                 cv2.putText(display, f"SPRINTING! {elapsed:.2f}/{TOUCH_SPRINT_DURATION:.2f}s",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
                 if elapsed < TOUCH_SPRINT_DURATION:
-                    tello.send_rc_control(0, TOUCH_SPRINT_FB, 0, 0)
+                    tello.send_rc_control(0, TOUCH_SPRINT_FB, -40, 0)
                 else:
                     tello.send_rc_control(0, 0, 0, 0)
                     print("【CP2 待評分】碰撞氣球！TA please judge touch.")
@@ -688,13 +686,32 @@ def main():
         # ── Stage 4b: classify the brainrot image ────────────────────────
         class_label, target_tag_id = run_classification(tello, frame_read, brainrot_model)
 
+        tello.rotate_clockwise(180)
+        tello.send_rc_control(0, 0, 30, 0)
         # ── Stage 4c: re-verify position before the final approach ─────────
         navigate_to_point(tello, frame_read, at_det, tag_pose_dict,
                           nav_target_x, nav_target_y, nav_target_yaw,
                           label="Stage 4c")
 
-        # ── Stage 4d: precise PID approach to the classified tag → land ────
-        approach_and_land(tello, target_tag_id, frame_read, at_det)
+        tello.rotate_clockwise(90)
+        tello.send_rc_control(0, -80, 0, 0)
+        # ── Stage 4d: fly to the standoff point in front of the CLASSIFIED
+        #              tag (tight deadzone, sized for the 30x30cm box) → land ──
+        target_entry = tag_pose_dict[target_tag_id]
+        land_x, land_y, land_yaw = al.compute_landing_standoff(target_entry, LANDING_APPROACH_DIST_M)
+        print(f"[Stage 4d] Standoff point for tag {target_tag_id}: "
+              f"({land_x:.2f}, {land_y:.2f}) yaw={math.degrees(land_yaw):.1f}°")
+
+        navigate_to_point(tello, frame_read, at_det, tag_pose_dict,
+                          land_x, land_y, land_yaw,
+                          pos_tol=LANDING_POS_TOL_M, yaw_tol=LANDING_YAW_TOL_RAD,
+                          max_iterations=LANDING_MAX_ITERATIONS, label="Stage 4d",
+                          allowed_tag_ids={target_tag_id})
+
+        print("[Stage 4d] In position — landing!")
+        tello.send_rc_control(0, 0, 0, 0)
+        time.sleep(0.3)
+        tello.land()
 
     except (EmergencyLand, KeyboardInterrupt) as e:
         print(f"\n[Main] {type(e).__name__} — landing.")

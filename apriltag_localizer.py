@@ -24,7 +24,6 @@ import numpy as np
 import yaml
 from scipy.spatial.transform import Rotation as R
 
-
 # OpenCV camera frame (X right, Y down, Z forward) -> world frame (X fwd-ish, Y left, Z up)
 _R_CV_TO_WORLD = np.array([
     [0, -1,  0, 0],
@@ -142,6 +141,54 @@ def world_error_to_body(dx: float, dy: float, yaw: float):
     forward_err = dx * math.cos(yaw) + dy * math.sin(yaw)
     right_err   = dx * math.sin(yaw) - dy * math.cos(yaw)
     return forward_err, right_err
+
+
+def compute_landing_standoff(tag_entry: dict, distance: float):
+    """
+    Compute a world-frame standoff point directly in front of a single tag,
+    facing it, at the given distance.
+
+    IMPORTANT: in this map's authoring convention, a tag's local Z axis
+    (3rd column of its rotation matrix) points INTO the mounting surface,
+    not out toward the viewer (verified against tag 4: its Z axis points
+    toward +x, i.e. into the far wall at x=5.54, not into the room where a
+    drone would stand to view it). So the standoff point is reached by
+    stepping AWAY from the wall along the NEGATIVE Z axis, and the heading
+    that faces back toward the tag points along the POSITIVE Z axis.
+
+    Returns (standoff_x, standoff_y, standoff_yaw).
+    """
+    T = tag_world_pose(tag_entry)
+    normal = T[:3, 2]
+    pos = np.array(tag_entry['position'], dtype=float)
+    standoff = pos[:2] - distance * normal[:2]
+    yaw = math.atan2(normal[1], normal[0])
+    return float(standoff[0]), float(standoff[1]), float(yaw)
+
+
+def average_poses(poses: list):
+    """
+    Average several (x, y, z, yaw) pose estimates to reduce single-frame
+    AprilTag detection noise.
+
+    x/y/z are averaged normally. yaw MUST use a circular mean — naive
+    averaging breaks badly right at the +/-180 deg wraparound (e.g.
+    [179, -179] would naively average to 0, when the correct answer is
+    +-180). This matters here since the nav target yaw sits at ~176.6 deg,
+    right next to that wrap point.
+
+    Returns (x, y, z, yaw), or None if `poses` is empty.
+    """
+    if not poses:
+        return None
+    xs, ys, zs, yaws = zip(*poses)
+    x_avg = float(np.mean(xs))
+    y_avg = float(np.mean(ys))
+    z_avg = float(np.mean(zs))
+    sin_sum = sum(math.sin(a) for a in yaws)
+    cos_sum = sum(math.cos(a) for a in yaws)
+    yaw_avg = math.atan2(sin_sum, cos_sum)
+    return x_avg, y_avg, z_avg, yaw_avg
 
 
 def wrap_angle(angle: float) -> float:

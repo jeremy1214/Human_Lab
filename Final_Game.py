@@ -14,18 +14,29 @@ Pipeline
   [Stage 2] Search balloon (slow yaw scan)
   [Stage 3] Kalman + PID track → sprint → touch
   [Post  ]  Hover after touch, TA positions image
-  [Stage 4] Brainrot YOLO classification (majority vote)
-  [Stage 4] Rotate until landing AprilTag visible
+  [Stage 4] Brainrot classification (majority vote)
+  [Stage 4] Rotate (stop-and-look) until landing AprilTag visible
   [Stage 4] PID approach → land
 
-Bugs fixed vs original Final_Game.py
--------------------------------------
-  1. postprocess_yolo: confidence was confs_f[idx_c.index(i)] → now cfs_c[k]
-  2. subprocess ROS node launch removed; classification runs inline
-  3. drawn_angle random.choice replaced with pre-flight user input
-  4. Dead-reckoning center-flight replaced with AprilTag PID approach
-  5. touch_time / classify_start / class_label scope made explicit
-  6. EKF inv(5) bug noted (in ekf_localization_node.py — fixed in that file)
+Detection backend
+------------------
+Both balloon and brainrot models now load directly from .pt weights via
+Ultralytics — no ONNX conversion needed.
+  pip install ultralytics djitellopy pupil-apriltags opencv-python scipy
+
+Changes from the previous version
+-----------------------------------
+  1. Switched balloon + brainrot detection from .onnx (onnxruntime / cv2.dnn)
+     to .pt (Ultralytics YOLO) — see detect_balloon() and classify_image().
+  2. AprilTag Stage-4 approach was diverging instead of converging: the
+     lateral PID term had its sign flipped (verified analytically and by
+     simulation). Fixed: lr = +KP_LAT * err_lat (was negated).
+  3. Stage-4 search now uses a stop-and-look rotation pattern instead of
+     continuous yaw — continuous rotation was blurring frames badly enough
+     that pupil_apriltags frequently failed to detect the tag at all.
+  4. Unused ROS-era / parallel-architecture files (main.py, image_classifier.py,
+     apriltag_detector.py, control_tello_ekf.py, ekf_localization.py) are no
+     longer imported anywhere — delete them, this file is self-contained.
 """
 
 import math
@@ -35,8 +46,8 @@ from collections import Counter
 
 import cv2
 import numpy as np
-import onnxruntime as ort
 from pupil_apriltags import Detector as ATDetector
+from ultralytics import YOLO
 
 import Balloon_Detector  # Stage 2 / 3 logic (Kalman + PID + touch)
 import Start_Tello  # Stage 1 takeoff helpers
@@ -45,101 +56,71 @@ import Start_Tello  # Stage 1 takeoff helpers
 #  CONFIGURATION  —  tune these numbers before the competition
 # ═══════════════════════════════════════════════════════════════════════════════
 
-BALLOON_ONNX    = 'balloon.onnx'          # balloon YOLOv5 model (cv2.dnn)
-BRAINROT_ONNX   = 'brainrot_detect.onnx'  # brainrot YOLOv8 model (onnxruntime)
+BALLOON_PT  = 'balloon.pt'          # Ultralytics balloon detector
+BRAINROT_PT = 'brainrot_detect.pt'  # Ultralytics brainrot classifier
 
 # ── AprilTag camera intrinsics (Lab 1 calibration) ──────────────────────────
 AT_FX, AT_FY    = 835.342103847164, 839.4691450667409
 AT_CX, AT_CY    = 415.5366635247159, 355.11975613817964
-AT_TAG_SIZE     = 0.165   # metres — update if landing tags differ
+
+# Physical AprilTag side length in metres.
+# NOTE: verify this matches the *printed* landing tags (13-16) — they may be
+# a different physical size than the localisation tags (4-12) used in the
+# ROS map. If the approach distance reads consistently wrong on real hardware
+# (e.g. always too close or too far), this is the first thing to check.
+AT_LANDING_TAG_SIZE = 0.165   # metres
 
 # ── Classification ────────────────────────────────────────────────────────────
-CLASS_NAMES       = ['cap', 'brr', 'trala', 'tung']
 LANDING_TAG       = {'cap': 13, 'brr': 14, 'trala': 15, 'tung': 16}
 CLASSIFY_FRAMES   = 20    # vote-collection window
 MIN_VOTE_FRACTION = 0.50  # majority needed
 CLASSIFY_TIMEOUT  = 30.0  # seconds; reset & retry if inconclusive
+CLASSIFY_CONF_THRESH = 0.15
 
 # ── Stage-4 approach ─────────────────────────────────────────────────────────
-APPROACH_DIST_M = 0.55    # metres in front of tag (40–70 cm spec)
+APPROACH_DIST_M = 0.55    # metres in front of tag (40-70 cm spec)
 LAND_POS_TOL    = 0.10    # forward-error tolerance (m) to trigger land
 LAND_LAT_TOL    = 0.08    # lateral / vertical tolerance (m)
-SEARCH_YAW_PCT  = 25      # RC % while rotating to find landing tag
 
-# Proportional gains (output in RC %, clamped to limit)
+# Stop-and-look search pattern (continuous rotation blurs AprilTag detection)
+SEARCH_YAW_PCT   = 25     # RC % while actively rotating
+SEARCH_ROTATE_S  = 0.4    # seconds of rotation per cycle
+SEARCH_PAUSE_S   = 0.6    # seconds held still per cycle (let the image settle)
+
+# Proportional gains (output in RC %, clamped to limit below)
 KP_FWD, KP_LAT, KP_ALT, KP_YAW = 40.0, 50.0, 40.0, 50.0
 
 # ── Timing ────────────────────────────────────────────────────────────────────
 POST_TOUCH_HOVER_S = 3.0  # hover after touch so TA can walk up with image
 
-# ── YOLO (brainrot) ───────────────────────────────────────────────────────────
-YOLO_INPUT_SIZE  = 640
-YOLO_CONF_THRESH = 0.15
-YOLO_NMS_THRESH  = 0.45
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  BRAINROT YOLO v8 HELPERS
+#  BRAINROT CLASSIFICATION (Ultralytics .pt)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _letterbox(img, size=640):
-    h, w = img.shape[:2]
-    scale = size / max(h, w)
-    nh, nw = int(round(h * scale)), int(round(w * scale))
-    canvas = np.full((size, size, 3), 114, dtype=np.uint8)
-    resized = cv2.resize(img, (nw, nh))
-    py, px = (size - nh) // 2, (size - nw) // 2
-    canvas[py:py + nh, px:px + nw] = resized
-    return canvas
-
-
-def preprocess_yolo(frame):
-    lb   = _letterbox(frame, YOLO_INPUT_SIZE)
-    rgb  = cv2.cvtColor(lb, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    blob = np.expand_dims(np.transpose(rgb, (2, 0, 1)), 0)   # [1,3,640,640]
-    return blob
-
-
-def postprocess_yolo(output):
+def classify_image(frame: np.ndarray, model, conf_thresh: float = CLASSIFY_CONF_THRESH):
     """
-    Parse YOLOv8 ONNX output [1, 8, 8400].
-    Returns list of {'class_name', 'confidence'} sorted by confidence desc.
+    Classify a single frame with the Ultralytics brainrot model.
 
-    Bug fix: original code incorrectly re-indexed the full confidence array.
-    Correct form: cfs_c[k], where cfs_c = confs_f[idx_c].
+    Returns (label: str, confidence: float) or (None, 0.0) if nothing detected.
     """
-    rows        = output[0].T                          # [8400, 8]
-    class_ids   = np.argmax(rows[:, 4:], axis=1)
-    confidences = rows[np.arange(len(class_ids)), 4 + class_ids]
-    mask        = confidences >= YOLO_CONF_THRESH
-    if not np.any(mask):
-        return []
+    if model is None:
+        return None, 0.0
 
-    boxes_f = rows[mask, :4]
-    confs_f = confidences[mask]
-    class_f = class_ids[mask]
+    results = model.predict(frame, verbose=False, conf=conf_thresh)
+    if not results or results[0].boxes is None or len(results[0].boxes) == 0:
+        return None, 0.0
 
-    x1 = boxes_f[:, 0] - boxes_f[:, 2] / 2
-    y1 = boxes_f[:, 1] - boxes_f[:, 3] / 2
-    x2 = boxes_f[:, 0] + boxes_f[:, 2] / 2
-    y2 = boxes_f[:, 1] + boxes_f[:, 3] / 2
+    boxes = results[0].boxes
+    confs = boxes.conf.cpu().numpy()
+    best  = int(np.argmax(confs))
+    conf  = float(confs[best])
+    if conf < conf_thresh:
+        return None, 0.0
 
-    results = []
-    for cid in np.unique(class_f):
-        idx_c  = np.where(class_f == cid)[0]
-        bxs_c  = np.stack([x1[idx_c], y1[idx_c],
-                            x2[idx_c] - x1[idx_c],
-                            y2[idx_c] - y1[idx_c]], axis=1).tolist()
-        cfs_c  = confs_f[idx_c].tolist()   # confidences for this class only
-        keep   = cv2.dnn.NMSBoxes(bxs_c, cfs_c, YOLO_CONF_THRESH, YOLO_NMS_THRESH)
-        if len(keep) == 0:
-            continue
-        for k in (keep.flatten() if isinstance(keep, np.ndarray) else keep):
-            results.append({
-                'class_name': CLASS_NAMES[int(cid)],
-                'confidence': float(cfs_c[k]),   # ← bug fix
-            })
-    return sorted(results, key=lambda d: d['confidence'], reverse=True)
+    cls_id = int(boxes.cls.cpu().numpy()[best])
+    label  = model.names[cls_id]
+    return label, conf
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -152,7 +133,7 @@ def _rc_clamp(val, limit):
 
 def approach_and_land(tello, target_tag_id: int, frame_read):
     """
-    Rotate until the target landing AprilTag is visible then PID-approach
+    Stop-and-look rotation to find the target landing AprilTag, then PID-approach
     to APPROACH_DIST_M and land.  ESC in the window triggers emergency land.
     """
     at_det = ATDetector(
@@ -164,6 +145,11 @@ def approach_and_land(tello, target_tag_id: int, frame_read):
 
     print(f"[Stage 4] Searching for AprilTag id={target_tag_id}...")
 
+    # Continuous rotation blurs frames enough that pupil_apriltags frequently
+    # misses the tag — alternate short rotation bursts with still pauses.
+    rotating    = True
+    phase_start = time.time()
+
     while True:
         frame = frame_read.frame
         if frame is None:
@@ -173,17 +159,32 @@ def approach_and_land(tello, target_tag_id: int, frame_read):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         tags = at_det.detect(
             gray, estimate_tag_pose=True,
-            camera_params=cam_params, tag_size=AT_TAG_SIZE,
+            camera_params=cam_params, tag_size=AT_LANDING_TAG_SIZE,
         )
-
-        target = next((t for t in tags if t.tag_id == target_tag_id), None)
+        target  = next((t for t in tags if t.tag_id == target_tag_id), None)
         display = frame.copy()
 
         if target is None:
-            # Spin slowly to scan for the tag
-            tello.send_rc_control(0, 0, 0, SEARCH_YAW_PCT)
-            cv2.putText(display, f"Stage 4: rotating to find tag {target_tag_id}",
+            now     = time.time()
+            elapsed = now - phase_start
+
+            if rotating:
+                tello.send_rc_control(0, 0, 0, SEARCH_YAW_PCT)
+                if elapsed > SEARCH_ROTATE_S:
+                    tello.send_rc_control(0, 0, 0, 0)
+                    rotating    = False
+                    phase_start = now
+            else:
+                tello.send_rc_control(0, 0, 0, 0)   # hold still for a sharp frame
+                if elapsed > SEARCH_PAUSE_S:
+                    rotating    = True
+                    phase_start = now
+
+            cv2.putText(display,
+                        f"Stage 4: {'rotating' if rotating else 'looking'} "
+                        f"for tag {target_tag_id}",
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+
         else:
             # Camera-frame translation (OpenCV: +X right, +Y down, +Z forward)
             tx = float(target.pose_t[0])
@@ -191,19 +192,31 @@ def approach_and_land(tello, target_tag_id: int, frame_read):
             tz = float(target.pose_t[2])
 
             err_fwd = tz - APPROACH_DIST_M   # + → still too far
-            err_lat = tx                       # + → tag right → move right
-            err_alt = ty                       # + → tag below → go up
+            err_lat = tx                       # + → tag right of camera
+            err_alt = ty                       # + → tag below camera centre
             yaw_err = math.atan2(target.pose_R[1, 0], target.pose_R[0, 0])
 
+            # ── PID → RC percentages ──────────────────────────────────────
+            # fb : err_fwd>0 (too far)      → move forward (fb+)
+            # lr : err_lat>0 (tag to right) → move RIGHT (lr+) to close the gap.
+            #      BUG FIX: this term was previously negated, which sent the
+            #      drone left instead — verified by simulation to diverge
+            #      exponentially rather than converge. Do not re-add the minus.
+            # ud : err_alt>0 (tag below)    → move up (ud+) is achieved by
+            #      negating, since Tello's up_down convention is up-positive
+            #      while OpenCV's y-axis is down-positive.
+            # yaw: heuristic alignment; if the drone yaws away from the tag
+            #      instead of squaring up to it, flip this sign.
             fb  = _rc_clamp( KP_FWD * err_fwd,  25)
-            lr  = _rc_clamp(-KP_LAT * err_lat,  20)   # negate: right → move right (lr+)
-            ud  = _rc_clamp(-KP_ALT * err_alt,  20)   # negate: below → go up (ud+)
+            lr  = _rc_clamp( KP_LAT * err_lat,  20)
+            ud  = _rc_clamp(-KP_ALT * err_alt,  20)
             yaw = _rc_clamp(-KP_YAW * yaw_err,  35)
 
             tello.send_rc_control(lr, fb, ud, yaw)
 
             cv2.putText(display,
-                        f"Stage 4: tag {target_tag_id}  dist={tz:.2f}m  lat={tx:.2f}m  alt={ty:.2f}m",
+                        f"Stage 4: tag {target_tag_id}  dist={tz:.2f}m  "
+                        f"lat={tx:.2f}m  alt={ty:.2f}m",
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
             cv2.putText(display,
                         f"err fwd={err_fwd:.2f}  lat={err_lat:.2f}  alt={err_alt:.2f}",
@@ -243,36 +256,32 @@ def main():
     print("=" * 56)
 
     # ── Pre-flight: get drawn angle (before drone connects) ───────────────
-    # This is allowed — it's setup info, not in-flight control.
     while True:
         try:
-            raw = input("\n  Enter drawn starting angle in degrees (0 / 90 / 180 / 270): ")
-            drawn_angle = int(raw.strip())
-            print(f"  Drawn angle confirmed: {drawn_angle}°")
+            #raw = input("\n  Enter drawn starting angle in degrees (0 / 90 / 180 / 270): ")
+            #drawn_angle = int(raw.strip())
+            drawn_angle = 0
+            print(f"  Drawn angle confirmed: {drawn_angle}° (fixed)")
             break
         except ValueError:
             print("  Please enter an integer (e.g. 90).")
     input("\n  Connect laptop to Tello Wi-Fi, then press Enter to start...")
 
-    # ── Load models ───────────────────────────────────────────────────────
-    balloon_net   = None
-    brainrot_sess = None
-    brainrot_inp  = None
+    # ── Load models (.pt via Ultralytics) ───────────────────────────────────
+    balloon_model  = None
+    brainrot_model = None
 
-    if os.path.exists(BALLOON_ONNX):
-        balloon_net = cv2.dnn.readNetFromONNX(BALLOON_ONNX)
-        print(f"[Init] Balloon model loaded ({BALLOON_ONNX})")
+    if os.path.exists(BALLOON_PT):
+        balloon_model = YOLO(BALLOON_PT)
+        print(f"[Init] Balloon model loaded ({BALLOON_PT})  classes={balloon_model.names}")
     else:
-        print(f"[WARNING] {BALLOON_ONNX} not found — colour-fallback not implemented, "
-              "balloon detection will be disabled.")
+        print(f"[WARNING] {BALLOON_PT} not found — balloon detection disabled.")
 
-    if os.path.exists(BRAINROT_ONNX):
-        brainrot_sess = ort.InferenceSession(BRAINROT_ONNX,
-                                              providers=['CPUExecutionProvider'])
-        brainrot_inp  = brainrot_sess.get_inputs()[0].name
-        print(f"[Init] Brainrot model loaded ({BRAINROT_ONNX})")
+    if os.path.exists(BRAINROT_PT):
+        brainrot_model = YOLO(BRAINROT_PT)
+        print(f"[Init] Brainrot model loaded ({BRAINROT_PT})  classes={brainrot_model.names}")
     else:
-        print(f"[WARNING] {BRAINROT_ONNX} not found — Stage 4 classification disabled.")
+        print(f"[WARNING] {BRAINROT_PT} not found — Stage 4 classification disabled.")
 
     # ── Stage 1: takeoff + rotate ─────────────────────────────────────────
     tello = Start_Tello.initialize_tello_stage1()
@@ -287,13 +296,13 @@ def main():
     last_time      = time.time()
 
     # ── Stage state machine (explicit variable initialisation) ────────────
-    stage         = "SEARCH_BALLOON"
-    touch_time    = None      # set when balloon is touched
-    classify_start = None     # set when classification phase starts
-    votes         = []
-    conf_sum      = 0.0
-    class_label   = None      # set after classification
-    target_tag_id = None      # set after classification
+    stage          = "SEARCH_BALLOON"
+    touch_time     = None      # set when balloon is touched
+    classify_start = None      # set when classification phase starts
+    votes          = []
+    conf_sum       = 0.0
+    class_label    = None      # set after classification
+    target_tag_id  = None      # set after classification
 
     print("[FSM] Entering competition loop  —  ESC in camera window = emergency land")
 
@@ -304,9 +313,9 @@ def main():
                 time.sleep(0.01)
                 continue
 
-            h, w  = frame.shape[:2]
+            h, w    = frame.shape[:2]
             display = frame.copy()
-            now   = time.time()
+            now     = time.time()
 
             # ── Update Kalman prediction (always runs) ───────────────────
             dt = now - last_time
@@ -321,8 +330,7 @@ def main():
                 cv2.putText(display, "Stage 2: Searching for balloon...",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
 
-                box = (Balloon_Detector.detect_balloon_onnx(frame, balloon_net)
-                       if balloon_net is not None else None)
+                box = Balloon_Detector.detect_balloon(frame, balloon_model)
 
                 if box is not None:
                     print("【CP1 得分】偵測到氣球！ Balloon detected!")
@@ -344,8 +352,7 @@ def main():
                 cv2.putText(display, "Stage 3: Tracking balloon...",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-                box = (Balloon_Detector.detect_balloon_onnx(frame, balloon_net)
-                       if balloon_net is not None else None)
+                box = Balloon_Detector.detect_balloon(frame, balloon_model)
                 tracked_pos = None
 
                 if box is not None:
@@ -414,16 +421,12 @@ def main():
                 tello.send_rc_control(0, 0, 0, 0)
                 elapsed = now - classify_start
 
-                if brainrot_sess is not None:
-                    blob = preprocess_yolo(frame)
-                    out  = brainrot_sess.run(None, {brainrot_inp: blob})
-                    dets = postprocess_yolo(out[0])
-                    if dets:
-                        votes.append(dets[0]['class_name'])
-                        conf_sum += dets[0]['confidence']
-                        cv2.putText(display,
-                                    f"Detected: {dets[0]['class_name']} "
-                                    f"({dets[0]['confidence']:.2f})",
+                if brainrot_model is not None:
+                    label, conf = classify_image(frame, brainrot_model)
+                    if label is not None:
+                        votes.append(label)
+                        conf_sum += conf
+                        cv2.putText(display, f"Detected: {label} ({conf:.2f})",
                                     (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                     else:
                         cv2.putText(display, "No detection — hold image closer/steadier",
@@ -439,10 +442,10 @@ def main():
                 # Decide once we have enough votes or hit timeout
                 enough = len(votes) >= CLASSIFY_FRAMES or elapsed > CLASSIFY_TIMEOUT
                 if enough and votes:
-                    counts         = Counter(votes)
-                    best, cnt      = counts.most_common(1)[0]
-                    frac           = cnt / len(votes)
-                    avg_conf       = conf_sum / max(len(votes), 1)
+                    counts   = Counter(votes)
+                    best, cnt = counts.most_common(1)[0]
+                    frac     = cnt / len(votes)
+                    avg_conf = conf_sum / max(len(votes), 1)
 
                     print(f"\n{'='*48}")
                     print(f"  CLASSIFICATION RESULT : {best.upper()}")
@@ -456,7 +459,6 @@ def main():
                         target_tag_id = LANDING_TAG[best]
                         stage = "NAVIGATE"
                     else:
-                        # Low agreement — collect more frames
                         print("[Classify] Low vote agreement — collecting more frames")
                         votes          = []
                         conf_sum       = 0.0
@@ -477,7 +479,7 @@ def main():
 
             # ── Status bar (every frame) ──────────────────────────────────
             try:
-                bat = tello.get_battery()
+                bat  = tello.get_battery()
                 h_cm = tello.get_height()
                 status = f"Stage:{stage}  Bat:{bat}%  H:{h_cm}cm"
             except Exception:

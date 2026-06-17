@@ -28,8 +28,7 @@ Changes in this revision
 --------------------------
   1. Stage 1b (and the two new Stage-4 navigation passes) no longer stream
      continuous RC velocity while requiring the tag to stay in view the
-     whole time. Instead: scan for ANY tag (stop-and-look) → estimate
-     full
+     whole time. Instead: scan for ANY tag (stop-and-look) → estimate full
      world pose from that ONE tag → fly DIRECTLY to the target with a
      single relative Tello "go" maneuver (djitellopy go_xyz_speed, using
      the same body-frame error decomposition already validated by
@@ -56,7 +55,6 @@ Both balloon and brainrot models load from .pt weights via Ultralytics.
 
 import math
 import os
-import threading
 import time
 from collections import Counter
 
@@ -104,13 +102,8 @@ NAV_POS_TOL_M   = 0.5
 NAV_YAW_TOL_RAD = math.radians(30)
 
 NAV_GO_SPEED_CMS   = 30    # speed for the one-shot relative "go" maneuver
-NAV_MIN_MOVE_CM     = 20   # Tello "go" SDK command requires each nonzero axis
-                            # to be >= 20cm (a value of 1-19 is rejected with
-                            # "error" by the firmware) — see the official
-                            # Tello SDK doc for "go x y z speed": x/y/z: 20-500.
-                            # The old value of 10 silently dropped small
-                            # corrective moves (incl. small altitude trims).
-NAV_MAX_MOVE_CM     = 150  # safety cap per single move, per axis
+NAV_MIN_MOVE_CM     = 10   # Tello SDK requires each axis to be 0 or >= this
+NAV_MAX_MOVE_CM     = 200  # safety cap per single move, per axis
 NAV_MAX_ITERATIONS  = 2    # give up (and proceed anyway) after this many cycles
 NAV_SCAN_WARN_S     = 8.0  # print a reminder if no tag found within this long
 
@@ -121,19 +114,8 @@ MIN_VOTE_FRACTION    = 0.50
 CLASSIFY_TIMEOUT     = 30.0
 CLASSIFY_CONF_THRESH = 0.15
 
-# ── Stage-4 final approach: precise, continuous, single target tag ──────────
-# The landing target is a 30x30cm box on the floor ~20cm in front of (out
-# from the wall from) the landing tag — NOT a hover point near the tag
-# itself. APPROACH_DIST_M is therefore the box's distance from the tag's
-# wall plane, not an arbitrary safe-hover distance. The PID below still
-# matches the drone's altitude to the tag's vertical centre (err_alt = ty)
-# while closing in — that's fine, because tello.land() performs its own
-# full controlled descent to the ground from whatever altitude it's
-# called at. As long as the horizontal (forward/lateral/yaw) position is
-# correct when land() fires, the autoland brings it down inside the box.
-# (15cm half-width box + 8cm lateral tolerance and 10cm forward tolerance
-# below comfortably fit within the box if 20cm is the box's centre.)
-APPROACH_DIST_M = 0.20
+# ── Stage-4 final approach (unchanged: precise, continuous, single target tag) ──
+APPROACH_DIST_M = 0.55
 LAND_POS_TOL    = 0.10
 LAND_LAT_TOL    = 0.08
 KP_FWD, KI_FWD, KD_FWD = 40.0, 0.0, 8.0
@@ -219,50 +201,6 @@ def _rotate_by_yaw_err(tello, yaw_err_rad: float, min_deg: int = 3):
         tello.rotate_clockwise(abs(deg))
 
 
-def _run_blocking_with_live_feed(tello, frame_read, fn, status_text: str, label: str):
-    """
-    djitellopy's go_xyz_speed()/rotate_clockwise()/rotate_counter_clockwise()
-    all block the calling thread until the Tello replies "ok" — which for a
-    "go" maneuver only happens once the drone has physically finished
-    travelling. Calling these directly on the main thread means cv2.imshow()
-    never runs during the manoeuvre, so the preview window appears frozen
-    (and, separately, the Tello's own video bandwidth is known to dip while
-    it's busy executing a "go"/"curve"/rotate command).
-
-    This runs `fn` (a zero-arg callable wrapping the blocking SDK call) on a
-    background thread while the main thread keeps pulling frames and calling
-    cv2.imshow(), so the preview keeps updating and ESC still works during
-    the manoeuvre. Raises EmergencyLand if ESC is pressed while waiting.
-    """
-    result = {}
-
-    def _worker():
-        try:
-            fn()
-        except Exception as e:
-            result['error'] = e
-
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
-
-    while t.is_alive():
-        frame = frame_read.frame
-        if frame is not None:
-            display = frame.copy()
-            cv2.putText(display, f"[{label}] {status_text}",
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 200, 255), 2)
-            cv2.imshow('HCC Final Game', display)
-        if cv2.waitKey(1) & 0xFF == 27:
-            tello.send_rc_control(0, 0, 0, 0)
-            tello.land()
-            raise EmergencyLand(f"ESC during {label} ({status_text})")
-        time.sleep(0.02)
-
-    t.join()
-    if 'error' in result:
-        raise result['error']
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 #  SCAN → ESTIMATE → FLY DIRECTLY → RESCAN → VERIFY DEADZONE
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -333,48 +271,20 @@ def navigate_to_point(tello, frame_read, at_det: ATDetector, tag_pose_dict: dict
             return True
 
         # ── Fly DIRECTLY to the estimated point (one-shot relative 'go') ──
-        # Tello "go x y z speed" convention (confirmed against the official
-        # SDK doc + djitellopy): x = forward(+)/backward(-),
-        # y = RIGHT(+)/LEFT(-), z = up(+)/down(-).
-        # world_error_to_body() returns "right_err" already in that same
-        # sign convention (+ = need to move right) — it must be passed
-        # through as-is, NOT negated. The previous code negated it into a
-        # "left_cm" and fed that into the y-slot, which flipped every
-        # lateral correction (the drone went right when it needed to go
-        # left, and vice versa) — this was the "weird directions" bug.
         fwd_err, right_err = al.world_error_to_body(dx, dy, yaw)
         forward_cm = _clamp_move(fwd_err * 100)
-        right_cm   = _clamp_move(right_err * 100)
+        left_cm    = _clamp_move(-right_err * 100)
         alt_cm     = _clamp_move(NAV_HEIGHT_CM - tello.get_height())
 
-        if forward_cm or right_cm or alt_cm:
-            print(f"[{label}]   -> go(forward={forward_cm}cm, right={right_cm}cm, up={alt_cm}cm)")
+        if forward_cm or left_cm or alt_cm:
+            print(f"[{label}]   -> go(forward={forward_cm}cm, left={left_cm}cm, up={alt_cm}cm)")
             try:
-                _run_blocking_with_live_feed(
-                    tello, frame_read,
-                    lambda: tello.go_xyz_speed(forward_cm, right_cm, alt_cm, NAV_GO_SPEED_CMS),
-                    status_text=f"flying (fwd={forward_cm} right={right_cm} up={alt_cm})cm",
-                    label=label,
-                )
-            except EmergencyLand:
-                raise
+                tello.go_xyz_speed(forward_cm, left_cm, alt_cm, NAV_GO_SPEED_CMS)
             except Exception as e:
                 print(f"[{label}]   go_xyz_speed failed ({e}) — will retry next iteration")
 
         # ── Rotate to face the target heading ─────────────────────────────
-        deg_display = max(-179, min(179, int(round(math.degrees(yaw_err)))))
-        if abs(deg_display) >= 3:
-            try:
-                _run_blocking_with_live_feed(
-                    tello, frame_read,
-                    lambda: _rotate_by_yaw_err(tello, yaw_err),
-                    status_text=f"rotating {abs(deg_display)}°",
-                    label=label,
-                )
-            except EmergencyLand:
-                raise
-            except Exception as e:
-                print(f"[{label}]   rotate failed ({e}) — will retry next iteration")
+        _rotate_by_yaw_err(tello, yaw_err)
         time.sleep(0.3)
 
     print(f"[{label}] Max iterations reached without converging — proceeding anyway.")
@@ -479,8 +389,7 @@ def run_classification(tello, frame_read, brainrot_model):
 def approach_and_land(tello, target_tag_id: int, frame_read, at_det: ATDetector):
     """
     Stop-and-look rotation to find the target landing AprilTag, then PID-approach
-    until centred at APPROACH_DIST_M (the 30x30cm floor box in front of the tag)
-    and land. ESC in the window triggers emergency land.
+    to APPROACH_DIST_M and land. ESC in the window triggers emergency land.
     """
     cam_params = [AT_FX, AT_FY, AT_CX, AT_CY]
 
@@ -777,8 +686,7 @@ def main():
                           label="Stage 4a")
 
         # ── Stage 4b: classify the brainrot image ────────────────────────
-        # class_label, target_tag_id = run_classification(tello, frame_read, brainrot_model)
-        target_tag_id = 16
+        class_label, target_tag_id = run_classification(tello, frame_read, brainrot_model)
 
         # ── Stage 4c: re-verify position before the final approach ─────────
         navigate_to_point(tello, frame_read, at_det, tag_pose_dict,

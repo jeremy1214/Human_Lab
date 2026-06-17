@@ -28,6 +28,7 @@ Bug fixes vs the previous version (see Final_Game.py for the full writeup):
 
 import cv2
 import numpy as np
+
 from pid_controller import PIDController
 
 # =====================================================================
@@ -42,8 +43,8 @@ FOCAL_LENGTH_Y = 839.4691450667409
 BALLOON_REAL_DIAMETER = 25.0  # cm — update with the size given on competition day
 
 # Tracking PID gains [Kp, Ki, Kd]
-PID_X_GAINS = (0.4, 0.0, 0.08)   # left/right error → Tello yaw
-PID_Y_GAINS = (0.4, 0.0, 0.08)   # up/down error    → Tello throttle
+PID_X_GAINS = (0.25, 0.0, 0.08)   # left/right error → Tello yaw
+PID_Y_GAINS = (0.35, 0.0, 0.08)   # up/down error    → Tello throttle
 PID_Z_GAINS = (0.5, 0.0, 0.10)   # forward distance → Tello pitch
 
 BALLOON_CONF_THRESH = 0.7     # YOLO confidence threshold for balloon detection
@@ -51,7 +52,8 @@ BALLOON_CONF_THRESH = 0.7     # YOLO confidence threshold for balloon detection
 # Touch / sprint thresholds
 TOUCH_STANDOFF_CM    = 35.0   # PID_Z setpoint: hold this far from the balloon
 TOUCH_DISTANCE_CM    = 45.0   # once this close AND centred, consider "ready"
-TOUCH_CENTER_TOL_CM  = 10.0   # lateral tolerance for "centred"
+TOUCH_CENTER_TOL_CM  = 15.0   # lateral tolerance for "centred"
+TOUCH_VERTICAL_TOL_CM = 10.0
 TOUCH_CONFIRM_FRAMES = 4      # require this many CONSECUTIVE ready frames
                               # (debounce against a single noisy detection)
 
@@ -168,7 +170,7 @@ class BalloonTracker:
         ud_speed  = self.pid_ud.update(y_p, dt)
         fb_speed  = self.pid_fb.update(z_p - TOUCH_STANDOFF_CM, dt)
 
-        is_close_now = (z_p <= TOUCH_DISTANCE_CM) and (abs(x_p) < TOUCH_CENTER_TOL_CM)
+        is_close_now = (z_p <= TOUCH_DISTANCE_CM) and (abs(x_p) < TOUCH_CENTER_TOL_CM) and abs(y_p) < TOUCH_VERTICAL_TOL_CM
         self.close_streak = self.close_streak + 1 if is_close_now else 0
         ready_to_sprint    = self.close_streak >= TOUCH_CONFIRM_FRAMES
 

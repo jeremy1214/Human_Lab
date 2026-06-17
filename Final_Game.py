@@ -102,7 +102,7 @@ NAV_POS_TOL_M   = 0.5
 NAV_YAW_TOL_RAD = math.radians(30)
 
 NAV_GO_SPEED_CMS   = 30    # speed for the one-shot relative "go" maneuver
-NAV_MIN_MOVE_CM     = 20   # Tello SDK requires each axis to be 0 or >= this
+NAV_MIN_MOVE_CM     = 10   # Tello SDK requires each axis to be 0 or >= this
 NAV_MAX_MOVE_CM     = 200  # safety cap per single move, per axis
 NAV_MAX_ITERATIONS  = 2    # give up (and proceed anyway) after this many cycles
 NAV_SCAN_WARN_S     = 8.0  # print a reminder if no tag found within this long
@@ -112,7 +112,7 @@ LANDING_TAG          = {'cap': 13, 'brr': 14, 'trala': 15, 'tung': 16}
 CLASSIFY_FRAMES      = 20
 MIN_VOTE_FRACTION    = 0.50
 CLASSIFY_TIMEOUT     = 30.0
-CLASSIFY_CONF_THRESH = 0.3
+CLASSIFY_CONF_THRESH = 0.15
 
 # ── Stage-4 final approach (unchanged: precise, continuous, single target tag) ──
 APPROACH_DIST_M = 0.55

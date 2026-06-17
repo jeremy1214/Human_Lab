@@ -103,7 +103,7 @@ NAV_HEIGHT_CM   = 115                  # cruise height during navigation
 NAV_POS_TOL_M   = 0.35
 NAV_YAW_TOL_RAD = math.radians(20)
 
-NAV_GO_SPEED_CMS   = 30    # speed for the one-shot relative "go" maneuver (xy only)
+NAV_GO_SPEED_CMS   = 40    # speed for the one-shot relative "go" maneuver (xy only) 30 if bugged
 NAV_MIN_MOVE_CM    = 10    # Tello SDK requires each axis to be 0 or >= this
 NAV_MAX_MOVE_CM    = 300   # safety cap per single move, per axis
 NAV_MAX_ITERATIONS = 1     # give up (and proceed anyway) after this many cycles
@@ -641,6 +641,8 @@ def main():
 
             # ── POST_TOUCH_HOVER (brief stabilisation, then exit the loop) ──
             elif stage == "POST_TOUCH_HOVER":
+                global NAV_HEIGHT_CM
+                NAV_HEIGHT_CM = 135
                 tello.send_rc_control(0, 0, 0, 0)
                 elapsed   = now - touch_time
                 remaining = max(0.0, POST_TOUCH_HOVER_S - elapsed)
@@ -678,8 +680,6 @@ def main():
 
             time.sleep(0.02)
 
-        global NAV_HEIGHT_CM
-        NAV_HEIGHT_CM = 135
         # ── Stage 4a: back to the 15/16 midpoint (drone may have drifted) ───
         navigate_to_point(tello, frame_read, at_det, tag_pose_dict,
                           nav_target_x, nav_target_y, nav_target_yaw,
@@ -691,11 +691,11 @@ def main():
             global NAV_HEIGHT_CM
             NAV_HEIGHT_CM = 150
 
-        tello.rotate_clockwise(180)
-        # ── Stage 4c: re-verify position before the final approach ─────────
-        navigate_to_point(tello, frame_read, at_det, tag_pose_dict,
-                          nav_target_x, nav_target_y, nav_target_yaw,
-                          label="Stage 4c")
+        # tello.rotate_clockwise(180)
+        # # ── Stage 4c: re-verify position before the final approach ─────────
+        # navigate_to_point(tello, frame_read, at_det, tag_pose_dict,
+        #                   nav_target_x, nav_target_y, nav_target_yaw,
+        #                   label="Stage 4c")
 
         tello.rotate_clockwise(90)
         tello.send_rc_control(0, -80, 0, 0)

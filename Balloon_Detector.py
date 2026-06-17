@@ -43,15 +43,15 @@ FOCAL_LENGTH_Y = 839.4691450667409
 BALLOON_REAL_DIAMETER = 25.0  # cm — update with the size given on competition day
 
 # Tracking PID gains [Kp, Ki, Kd]
-PID_X_GAINS = (0.4, 0.0, 0.08)   # left/right error → Tello yaw
-PID_Y_GAINS = (0.4, 0.0, 0.08)   # up/down error    → Tello throttle
+PID_X_GAINS = (0.8, 0.0, 0.08)   # left/right error → Tello yaw
+PID_Y_GAINS = (0.5, 0.0, 0.08)   # up/down error    → Tello throttle
 PID_Z_GAINS = (0.5, 0.0, 0.10)   # forward distance → Tello pitch
 
 BALLOON_CONF_THRESH = 0.75     # YOLO confidence threshold for balloon detection
 
 # Touch / sprint thresholds
 TOUCH_STANDOFF_CM    = 35.0   # PID_Z setpoint: hold this far from the balloon
-TOUCH_DISTANCE_CM    = 60.0   # once this close AND centred, consider "ready"
+TOUCH_DISTANCE_CM    = 50.0   # once this close AND centred, consider "ready"
 TOUCH_CENTER_TOL_CM  = 15.0   # lateral tolerance for "centred"
 TOUCH_HEIGHT_TOL_CM  = 10.0
 TOUCH_CONFIRM_FRAMES = 4      # require this many CONSECUTIVE ready frames

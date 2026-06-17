@@ -96,7 +96,7 @@ AT_TAG_SIZE = 0.165
 # ── Scan-fly-rescan navigation (used for the 15/16-midpoint passes) ─────────
 NAV_TARGET_IDS  = (15, 16)              # fly to the midpoint of these tags
 NAV_WALL_IDS    = (4, 5, 6, 7, 8, 9)    # face away from this wall
-NAV_HEIGHT_CM   = 135                   # cruise height during navigation
+NAV_HEIGHT_CM   = 115                  # cruise height during navigation
 
 # Deadzone — intentionally large: this stage just needs to get the drone
 # roughly back to the open area facing the right way, not landing-precise.
@@ -133,7 +133,7 @@ LANDING_MAX_ITERATIONS  = 1
 
 # ── Classification ────────────────────────────────────────────────────────────
 LANDING_TAG          = {'cap': 13, 'brr': 14, 'trala': 15, 'tung': 16}
-CLASSIFY_FRAMES      = 20
+CLASSIFY_FRAMES      = 50
 MIN_VOTE_FRACTION    = 0.50
 CLASSIFY_TIMEOUT     = 30.0
 CLASSIFY_CONF_THRESH = 0.3
@@ -566,7 +566,7 @@ def main():
                     balloon_tracker.reset()
                     stage = "TRACK_AND_TOUCH"
                 else:
-                    Balloon_Detector.search_balloon_pattern(tello, search_speed=35)
+                    Balloon_Detector.search_balloon_pattern(tello, search_speed=-35)
 
             # ── TRACK_AND_TOUCH ──────────────────────────────────────────
             elif stage == "TRACK_AND_TOUCH":
@@ -632,7 +632,7 @@ def main():
                 cv2.putText(display, f"SPRINTING! {elapsed:.2f}/{TOUCH_SPRINT_DURATION:.2f}s",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
                 if elapsed < TOUCH_SPRINT_DURATION:
-                    tello.send_rc_control(0, TOUCH_SPRINT_FB, -40, 0)
+                    tello.send_rc_control(0, TOUCH_SPRINT_FB, -25, 0)
                 else:
                     tello.send_rc_control(0, 0, 0, 0)
                     print("【CP2 待評分】碰撞氣球！TA please judge touch.")
@@ -678,6 +678,8 @@ def main():
 
             time.sleep(0.02)
 
+        global NAV_HEIGHT_CM
+        NAV_HEIGHT_CM = 135
         # ── Stage 4a: back to the 15/16 midpoint (drone may have drifted) ───
         navigate_to_point(tello, frame_read, at_det, tag_pose_dict,
                           nav_target_x, nav_target_y, nav_target_yaw,
@@ -685,9 +687,11 @@ def main():
 
         # ── Stage 4b: classify the brainrot image ────────────────────────
         class_label, target_tag_id = run_classification(tello, frame_read, brainrot_model)
+        if(target_tag_id == 15): 
+            global NAV_HEIGHT_CM
+            NAV_HEIGHT_CM = 150
 
         tello.rotate_clockwise(180)
-        tello.send_rc_control(0, 0, 30, 0)
         # ── Stage 4c: re-verify position before the final approach ─────────
         navigate_to_point(tello, frame_read, at_det, tag_pose_dict,
                           nav_target_x, nav_target_y, nav_target_yaw,

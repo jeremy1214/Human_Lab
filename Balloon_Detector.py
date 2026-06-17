@@ -181,6 +181,6 @@ class BalloonTracker:
         return lr, fb, ud, yaw, ready_to_sprint
 
 
-def search_balloon_pattern(tello, search_speed=35):
+def search_balloon_pattern(tello, search_speed=-35):
     """Autonomous yaw-only search rotation (rule-compliant: no manual control)."""
     tello.send_rc_control(0, 0, 0, search_speed)
